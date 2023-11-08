@@ -1,0 +1,133 @@
+# Diagnostic plots
+
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(ggsidekick)
+library(sdmTMB)
+library(here)
+
+source(here("R", "plot_map.R"))
+
+mout3 <- readRDS(here::here("data", "fits", "mout3.rds")) 
+index_grid <- readRDS(here::here("data", "index_grid.rds"))
+dat_tbl_mout3 <- readRDS(here::here("data", "fits", "all_mout3.rds"))
+
+index_grid_jun <- mutate(index_grid, month = 6,
+                         month_f = month(month, label = TRUE))
+
+glimpse(index_grid_jun)
+table(index_grid_jun$year)
+
+grid_months <- index_grid %>%
+  replicate_df(., "month", 1:12) %>%
+  mutate(month = as.numeric(month), month_f = month(month, label = TRUE))
+
+
+grid_months_years <- grid_months %>%
+  select(-year, -year_f) %>%
+  replicate_df(., "year", c("1998", "2008", "2018")) %>%
+  mutate(year_f = as.factor(year), month_f = month(month, label = TRUE))
+
+# Same
+# grid_months_years2 <- index_grid %>%
+#   replicate_df(., "month", 1:12) %>%
+#   replicate_df(., "year", c("1998", "2008", "2018")) %>%
+#   mutate(year_f = as.factor(year), month_f = month(month, label = TRUE))
+
+dim(index_grid)
+dim(index_grid_jun)
+dim(grid_months)
+dim(grid_months_years)
+
+# Chinoook only predictions
+pred_jun <- predict(mout3, newdata = index_grid_jun, 
+                    offset = rep.int(-6.287114, nrow(index_grid_jun)), re_form_iid = NA)
+glimpse(pred_jun)
+pred_months <- predict(mout3, newdata = grid_months, 
+                       offset = rep.int(-6.287114, nrow(grid_months)), re_form_iid = NA) 
+
+
+
+plot_map(pred_jun, exp(est)) +
+  scale_color_viridis_c(trans = fourth_root_power_trans()) +
+  ggtitle("Predicted juvenile chinook distribution in June")
+png(here::here("figs", "chinook_juv_jun.png"),
+    height = 8, width = 8, units = "in", res = 200)
+
+
+# Monthly predictions for all species
+all_pred_months <- purrr::map(
+  dat_tbl_mout3$fit,
+  ~ predict(.x, newdata = grid_months, 
+            offset = rep.int(-6.287114, nrow(grid_months)), re_form_iid = NA) 
+)
+
+dat_tbl_mout3$pred_grid <- all_pred_months
+
+# Fixed effect only predictions
+fixed_pred_list <- purrr::map2(
+  dat_tbl_mout3$fit, dat_tbl_mout3$data,
+  ~ predict(.x, newdata = .y)$est_non_rf %>% 
+    .x$family$linkinv(.)
+)
+
+dat_tbl_mout3$fixed_pred_list <- fixed_pred_list
+
+
+qq_list <- purrr::pmap(
+  list(dat_tbl_mout3$data, dat_tbl_mout3$sims, fixed_pred_list), 
+  function(x, y, z) {
+    print(dim(x))
+    print(dim(y))
+    print(dim(z))
+    dharma_res <- DHARMa::createDHARMa(
+      simulatedResponse = y[1:(nrow(y)-2),], # removing last two rows as they're created by simulate for each extra_time value
+      observedResponse = x$n_juv,
+      fittedPredictedResponse = z
+    )
+    plot(dharma_res)
+  }
+)
+
+
+
+
+png(here::here("figs", "seb", "chinook_juv_months_wdata4.png"),
+    height = 7, width = 10, units = "in", res = 300)
+plot_map(pred_months, exp(est), show_raw_data = TRUE, chinook_dat) + 
+  ggtitle("Predicted distribution of juvenile chinook by month") +
+  scale_x_continuous(name = NULL, limits = c(462700, 814800), expand = c(0, 0)) +
+  scale_y_continuous(name = NULL, limits = c(5350050, 5681850), expand = c(0, 0)) +
+  theme(legend.key.height = unit(0.06, 'npc'))
+dev.off()
+
+
+### looping through to obtain distribution maps for all species
+
+for (i in 1:nrow(dat_tbl_mout3)) {
+  species <- dat_tbl_mout3$species[i]
+  print(species)
+  
+  p <- plot_map(dat_tbl_mout3$pred_grid[[i]], exp(est), show_raw_data = TRUE, dat_tbl_mout3$data[[i]]) + 
+    ggtitle(paste0("Predicted distribution of juvenile ", species," by month")) +
+    scale_x_continuous(name = NULL, limits = c(462700, 814800), expand = c(0, 0)) +
+    scale_y_continuous(name = NULL, limits = c(5350050, 5681850), expand = c(0, 0)) +
+    theme(legend.key.height = unit(0.06, 'npc'))
+  png(here::here("figs", paste0(species, "_juv_months_loop.png")),
+      height = 7, width = 10, units = "in", res = 300)
+  print(p) # need to print() plot inside for loop!
+  dev.off() 
+  print("Done!")
+}
+
+
+######
+
+
+dharma_res <- DHARMa::createDHARMa(
+  simulatedResponse = dat_tbl_mout3$sims[[1]][1:(nrow(dat_tbl_mout3$sims[[1]])-2),],
+  observedResponse = dat_tbl_mout3$data[[1]]$n_juv,
+  fittedPredictedResponse = fixed_pred_list[[1]]
+)
+plot(dharma_res)
