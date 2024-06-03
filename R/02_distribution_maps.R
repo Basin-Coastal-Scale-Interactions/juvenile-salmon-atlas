@@ -6,6 +6,7 @@ library(ggplot2)
 library(ggsidekick)
 library(sdmTMB)
 library(here)
+library(sdmTMBextra)
 
 source(here("R", "plot_map.R"))
 
@@ -21,7 +22,10 @@ table(index_grid_jun$year)
 
 grid_months <- index_grid %>%
   replicate_df(., "month", 1:12) %>%
-  mutate(month = as.numeric(month), month_f = month(month, label = TRUE))
+  mutate(month = as.numeric(month), 
+         month_f = month(month, label = TRUE),
+         month_adj = ifelse(month > 2, month - 2, month + 10), # adjusting to start in March
+  NULL)
 
 
 grid_months_years <- grid_months %>%
@@ -44,6 +48,7 @@ dim(grid_months_years)
 pred_jun <- predict(mout3, newdata = index_grid_jun, 
                     offset = rep.int(-6.287114, nrow(index_grid_jun)), re_form_iid = NA)
 glimpse(pred_jun)
+
 pred_months <- predict(mout3, newdata = grid_months, 
                        offset = rep.int(-6.287114, nrow(grid_months)), re_form_iid = NA) 
 
@@ -73,6 +78,29 @@ fixed_pred_list <- purrr::map2(
 )
 
 dat_tbl_mout3$fixed_pred_list <- fixed_pred_list
+
+# Fixed effect only predictions
+fixed_pred_grid <- purrr::map(
+  dat_tbl_mout3$fit, 
+  ~ predict(.x, newdata = grid_months, 
+            offset = rep.int(-6.287114, nrow(grid_months)))$est_non_rf %>% 
+    .x$family$linkinv(.)
+)
+
+# Random field only predictions
+rf_pred_grid <- purrr::map(
+  dat_tbl_mout3$fit, 
+  ~ predict(.x, newdata = grid_months, 
+            offset = rep.int(-6.287114, nrow(grid_months)))$est_rf %>% 
+    .x$family$linkinv(.)
+)
+
+rf_pred_grid <- purrr::map(
+  dat_tbl_mout3$fit, 
+  ~ predict(.x, newdata = grid_months, 
+            offset = rep.int(-6.287114, nrow(grid_months)))$est_rf %>% 
+    .x$family$linkinv(.)
+)
 
 
 qq_list <- purrr::pmap(
@@ -114,6 +142,95 @@ for (i in 1:nrow(dat_tbl_mout3)) {
     scale_x_continuous(name = NULL, limits = c(462700, 814800), expand = c(0, 0)) +
     scale_y_continuous(name = NULL, limits = c(5350050, 5681850), expand = c(0, 0)) +
     theme(legend.key.height = unit(0.06, 'npc'))
+  png(here::here("figs", paste0("atlas_", species, "_juv_months.png")),
+      height = 7, width = 10, units = "in", res = 300)
+  print(p) # need to print() plot inside for loop!
+  dev.off() 
+  print("Done!")
+}
+
+for (i in 1:nrow(dat_tbl_mout3)) {
+  species <- dat_tbl_mout3$species[i]
+  print(species)
+  
+  p <- plot_map(dat_tbl_mout3$pred_grid[[i]], fixed_pred_grid[[i]], show_raw_data = TRUE, dat_tbl_mout3$data[[i]]) + 
+    ggtitle(paste0("Predicted distribution of juvenile ", species," by month (Fixed effect only)")) +
+    scale_x_continuous(name = NULL, limits = c(462700, 814800), expand = c(0, 0)) +
+    scale_y_continuous(name = NULL, limits = c(5350050, 5681850), expand = c(0, 0)) +
+    theme(legend.key.height = unit(0.06, 'npc'))
+  png(here::here("figs", paste0("FE_only_", species, "_juv_months.png")),
+      height = 7, width = 10, units = "in", res = 300)
+  print(p) # need to print() plot inside for loop!
+  dev.off() 
+  print("Done!")
+}
+
+for (i in 1:nrow(dat_tbl_mout3)) {
+  species <- dat_tbl_mout3$species[i]
+  print(species)
+  
+  p <- plot_map(dat_tbl_mout3$pred_grid[[i]], rf_pred_grid[[i]], show_raw_data = TRUE, dat_tbl_mout3$data[[i]]) + 
+    ggtitle(paste0("Random field - predicted distribution of juvenile ", species," by month")) +
+    scale_x_continuous(name = NULL, limits = c(462700, 814800), expand = c(0, 0)) +
+    scale_y_continuous(name = NULL, limits = c(5350050, 5681850), expand = c(0, 0)) +
+    theme(legend.key.height = unit(0.06, 'npc'))
+  png(here::here("figs", paste0("RF_", species, "_juv_months.png")),
+      height = 7, width = 10, units = "in", res = 300)
+  print(p) # need to print() plot inside for loop!
+  dev.off() 
+  print("Done!")
+}
+
+
+############
+
+sims_list <- furrr::future_map(
+  dat_tbl_mout3$fit, function (x) {
+    object <- x
+    samp <- sample_mle_mcmc(object, mcmc_iter = 22L, mcmc_warmup = 20L, mcmc_chains = 5L,
+                            stan_args = list(thin = 5L, cores = 5L))
+    obj <- object$tmb_obj
+    random <- unique(names(obj$env$par[obj$env$random]))
+    pl <- as.list(object$sd_report, "Estimate")
+    fixed <- !(names(pl) %in% random)
+    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+    obj_mle <- object
+    obj_mle$tmb_obj <- obj
+    obj_mle$tmb_map <- map
+    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
+  }
+)
+saveRDS(sims_list,
+        here::here("data", "fits", "nb_mcmc_draws_mout3.rds"))
+}
+
+
+
+sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_mout3.rds"))
+
+
+
+
+
+all_fit_tbl$sims <- sims_list
+
+
+
+### Plot distribution of sims vs observed:
+
+for (i in 1:nrow(dat_tbl_mout3)) {
+  species <- dat_tbl_mout3$species[i]
+  sims <- all_fit_tbl$sims[[i]]
+  dim(sims)
+  
+  obs <- all_fit_tbl$data[[i]]
+  
+  print(species)
+  
+  p <- ggplot(data = ,
+              aes(+
+    theme(legend.key.height = unit(0.06, 'npc'))
   png(here::here("figs", paste0(species, "_juv_months_loop.png")),
       height = 7, width = 10, units = "in", res = 300)
   print(p) # need to print() plot inside for loop!
@@ -122,7 +239,21 @@ for (i in 1:nrow(dat_tbl_mout3)) {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 ######
+
 
 
 dharma_res <- DHARMa::createDHARMa(

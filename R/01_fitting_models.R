@@ -19,6 +19,7 @@ dat <- dat_in %>%
   mutate(
     year_f = as.factor(year),
     month_f = month(date, label = TRUE),
+    month_adj = ifelse(month > 2, month - 2, month + 10), # adjusting to start in March
     yday = lubridate::yday(date),
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
@@ -30,15 +31,13 @@ dat <- dat_in %>%
   filter(!species == "steelhead") %>% 
   droplevels()
 
-
 ## plotting color palette
-# col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
-# names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
-
+col_pal <- c('#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0')
+names(col_pal) <- c('chinook','pink','chum','coho','sockeye')
 
 # prep multisession
 ncores <- parallel::detectCores() 
-future::plan(future::multisession, workers = 5) # one per species
+plan(multisession, workers = 5) # one per species
 
 
 ## mesh shared among species
@@ -73,7 +72,7 @@ spde2 <- make_mesh(
   type = "kmeans",
   n_knots = 100)
 spde2$mesh$n
-plot(spde2)
+#plot(spde2)
 
 png(here("figs", "99-mesh-comparison.png"), width = 8, height = 5, units = "in",
     res = 300)
@@ -93,6 +92,7 @@ dat_tbl
 
 # Extracting chinook data first to be able to play with code more easily
 chinook_dat <- dat_tbl[[1,"data"]][[1]]
+glimpse(chinook_dat)
 
 # chinook_pred <- dat_tbl[[1,"sims"]][[1]]
 #saveRDS(chinook_pred, here::here("data", "chinook_pred.rds"))
@@ -108,10 +108,9 @@ chinook_dat <- readRDS(here::here("data", "chinook_dat.rds"))
 spde <- readRDS(here::here("data","spde_mesh.rds"))        
 spde2 <- readRDS(here::here("data","spde2_mesh.rds"))        
 
-
 # sdmTMB model run
 mout3 <- sdmTMB(
-  n_juv ~ 0 + s(month, bs = "cc", k = 12) +
+  n_juv ~ 0 + s(month_adj, bs = "tp", k = 6) +
     day_night + survey_f +
     scale_dist + scale_depth + (1 | year_f),
   offset = "effort",
@@ -121,10 +120,10 @@ mout3 <- sdmTMB(
   data = chinook_dat,
   mesh = spde2,
   family = sdmTMB::nbinom2(),
-  spatial = "on",
-  time = "month",
-  extra_time = c(1, 4),
-  spatiotemporal = "AR1",
+  spatial = "off",
+  time = "month_adj",
+  extra_time = c(2, 11),
+  spatiotemporal = "RW",
   anisotropy = TRUE,
   silent = FALSE
 )
@@ -136,20 +135,22 @@ saveRDS(mout3, here::here("data", "fits", "mout3.rds"))
 # mout3 <- readRDS(here::here("data", "fits", "mout3.rds")) 
 
 # pararellizing species models 
-fits_list_mout3 <- future_map(
+fits_list_mout3 <- map( #future_map(
   dat_tbl$data,
   function(x) {
-    sdmTMB(n_juv ~ 0 + s(month, bs = "cc", k = 12) + 
+    sdmTMB(n_juv ~ 0 + s(month_adj, bs = "tp", k = 6) + # tp smoother is default 
              day_night + survey_f + scale_dist + scale_depth + (1 | year_f),
            offset = "effort",
-           knots = list(month = c(0, 12)),
+          # knots = list(month = c(0, 12)),
            data = x,
            mesh = spde2,
            family = sdmTMB::nbinom2(),
-           spatial = "on",
-           time = "month",
-           extra_time = c(1,4), 
-           spatiotemporal = "AR1",
+           spatial = "off", # No need to estimate "average"/spatial only RF, 
+          #tends to collapse with RW/also when first time step is flat
+           time = "month_adj",
+           extra_time = c(2,11), 
+           spatiotemporal = "RW", # RW = AR1 with cor of 1, Philina said only 
+          #viable option with temporally patchy data (Greenland Halibut analysis)
            anisotropy = TRUE,
            silent = FALSE
     )
@@ -192,11 +193,16 @@ grid_list <- readRDS(here::here("data-raw", "spatial", "pred_ipes_grid.RDS")) %>
 summer_grid <- grid_list$ipes_grid
 fall_grid <- grid_list$wcvi_grid
 
+fgbox <- fall_grid %>% 
+  summarize(maxx = max(X), minx = min(X))
+
 mutate(summer_grid, season_grid = "summer") %>%
   rbind(., mutate(fall_grid, season_grid = "fall")) %>%
 ggplot(aes(X, Y, fill = season_grid)) +
-         geom_tile(alpha = 0.6) +
-  scale_fill_manual(values = c("blue", "red")) + theme_sleek()
+         geom_raster(alpha = 0.6) +
+  scale_fill_manual(values = c("blue", "red")) + theme_sleek() +
+  coord_fixed() +
+  facet_wrap(~season_grid)
 
 # make key so that missing year-season combinations can be indexed
 year_season_key <- expand.grid(

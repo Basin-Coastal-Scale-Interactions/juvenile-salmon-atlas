@@ -4,3 +4,5 @@
 .Ruserdata
 figs/*
 data/fits/*
+R/mwes/*
+R/old/*
