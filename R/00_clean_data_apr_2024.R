@@ -100,7 +100,7 @@ dat_in <- catch_out
 ## import and transform IPES grid
 # ipes_sf_deg <- 
 ipes_sf_poly <- st_read(
-  here::here("data", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp")) %>% 
+  here::here("data-raw", "spatial", "ipes_shapefiles", "IPES_Grid_UTM9.shp")) %>% 
   #convert into single polygon
   st_union(., by_feature = FALSE)
 
