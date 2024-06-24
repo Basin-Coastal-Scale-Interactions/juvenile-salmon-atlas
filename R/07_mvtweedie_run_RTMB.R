@@ -34,22 +34,24 @@ interpolator_data <- fmesher::fm_basis(
 
 # extracting sdmTMB model object without fitting to simplify RTMB data entry
 
-m_svc <- sdmTMB(
-  stock_prop ~ 0 + region + (1 | year_adj_f) + s(scale_month_adj, by = region, bs = "tp", k = 6), 
-  family = tweedie(),
-  spatial_varying = ~ 0 + region * scale_month_adj,
-  offset = dat$effort,
-  data = dat,
-  time = "month_adj",
-  extra_time = c(2,11),
-  spatial = "off",
-  spatiotemporal = "rw",
-  anisotropy = FALSE,
-  mesh = sdmTMB_mesh,
-  silent = FALSE,
-  control = sdmTMBcontrol(newton_loops = 0L, nlminb_loops = 1L),
-  do_fit = FALSE
-)
+# m_svc <- sdmTMB(
+#   stock_prop ~ 0 + region + (1 | year_adj_f) + s(scale_month_adj, by = region, bs = "tp", k = 6), 
+#   family = tweedie(),
+#   spatial_varying = ~ 0 + region * scale_month_adj,
+#   offset = dat$effort,
+#   data = dat,
+#   time = "month_adj",
+#   extra_time = c(2,11),
+#   spatial = "off",
+#   spatiotemporal = "rw",
+#   anisotropy = FALSE,
+#   mesh = sdmTMB_mesh,
+#   silent = FALSE,
+#   control = sdmTMBcontrol(newton_loops = 0L, nlminb_loops = 1L),
+#   do_fit = FALSE
+# )
+
+m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
 
 m_svc$spatial_varying_formula
 m_svc$spatial_varying
@@ -122,7 +124,7 @@ nll <- function(par) {
     rf2[, z] %~% dgmrf(0, tau_Z[z]^2 * Q)
   }
   
-  log_mu <- numeric(length(observed))
+  eta_i <- numeric(length(observed))
   eta_iid_re_i <- numeric(length(observed))
   eta_fixed_i <- numeric(length(observed))
   eta_smooth_i <- numeric(length(observed))
@@ -157,20 +159,20 @@ nll <- function(par) {
     # for (int z = 0; z < n_z; z++)
     #   eta_i(i,m) += zeta_s_A(i,z,m) * z_i(i,z);
    #browser()
-    log_mu[i] <- offset[i] + # rf_at_observations0[i] + # switch spatial = "off"
+    eta_i[i] <- offset[i] + # rf_at_observations0[i] + # switch spatial = "off"
       eta_fixed_i[i] + eta_iid_re_i[i] + eta_smooth_i[i] + rf_at_observations[i, t_i[i], c_i[i]] +
       sum(rf2_at_observations[i, ] * z_i[i,]) # spatially varying coefficients
   }
   
   # For prediction
-  mu <- exp(log_mu)
-  ADREPORT(mu)
+  mu <- exp(eta_i)
+  REPORT(mu)
   
   #REPORT(rf_at_observations0) #< NEW
   REPORT(rf_at_observations)
   REPORT(rf2_at_observations)
   
-  observed %~% dtweedie(exp(log_mu), phi, tweedie_p, log = TRUE)
+  observed %~% dtweedie(mu, phi, tweedie_p, log = TRUE)
   RE %~% dnorm(0, sigma_G, log = TRUE) # random effect distribution
   
   ADREPORT(tweedie_p)
@@ -194,10 +196,14 @@ nll <- function(par) {
   REPORT(log_smooth_sigma) # standard deviations of smooth random effects, in log-space
 }
 
+saveRDS(nll, here::here("data", "stock-comp-nll-RTMB.rds"))
+
 # parsing smoothers
 sm <- m_svc$smoothers
 # sm <- sdmTMB:::parse_smoothers(stock_prop ~  0 + region + (1 | year_f)
 #                                + s(month_adj, by = region, bs = "tp", k = 6), dat)
+
+
 
 tmb_data <- list(
   observed = dat$stock_prop,
@@ -226,6 +232,8 @@ tmb_data <- list(
   n_c = length(unique(dat$region)), # number of categories
   c_i = as.integer(dat$region)
 )
+
+tmb_data_fitted <- tmb_data # save copy as this is overwritten when predicting
 
 glimpse(tmb_data)
 
@@ -275,17 +283,18 @@ sdrep <- sdreport(obj)
 sdrep
 
 #saveRDS(obj, file = "data/fits/stock-prop-grouped-rw-RTMB.rds")
-saveRDS(obj, file = "data/fits/stock-prop-grouped-rw-mapped-RTMB.rds")
+#saveRDS(obj, file = "data/fits/stock-prop-grouped-rw-mapped-RTMB.rds")
 
-m_svc <- update(m_svc, do_fit = TRUE, 
-                control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 9), rep(2, 9))),
-                                                   b_smooth = factor(b_smooth_map),
-                                                   ln_smooth_sigma = factor(c(1,2,3,4,5,6,7,8,NA)))
-                                        )
-                )
-                
+
+# m_svc <- update(m_svc, do_fit = TRUE, 
+#                 control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 9), rep(2, 9))),
+#                                                    b_smooth = factor(b_smooth_map),
+#                                                    ln_smooth_sigma = factor(c(1,2,3,4,5,6,7,8,NA)))
+#                                         )
+#                 )
+#            
+
 m_svc$sd_report # compare with sdmTMB object
-#saveRDS(m_svc, file = "data/fits/stock-prop-m-svc-sdmTMB.rds")
 
 sanity(m_svc)
 
@@ -303,19 +312,13 @@ opt$objective <- obj$fn(opt$par)
 
 # Predictive grid -----------------------------------------------------------
 
-index_grid <- readRDS(here("data", "pred_grid_all_coast.rds")) %>%
-  # filter(row_number() %% 5 == 1) %>% ### DOWNSAMPLING GRID %>%
-  # arrange(X,Y) %>%
-  # filter(row_number() %% 5 == 1) %>% ### DOWNSAMPLING GRID %>%
-  mutate(year = 2019L, 
-         year_f = as.factor(year),
-         survey_f = as.factor("hss"),
-         target_depth = 0,
-         day_night = "DAY",
-         scale_depth = -0.5427145) %>%
-  rename(year_adj_f = year_f, year_adj = year)
-  
+obj <- readRDS(file = "data/fits/stock-prop-grouped-rw-mapped-RTMB.rds")
+obj$fn()
 
+# sdrep <- sdreport(obj)
+# sdrep
+
+# functions for quickly applying and unapplying scale()
 scale_est <- function (x, unscaled_vec) {
   sc <- scale(unscaled_vec)
   sc_center <- attr(sc, "scaled:center")
@@ -332,56 +335,207 @@ unscale_est <- function (x, unscaled_vec) {
 
 scale_est(1:12, dat$month_adj)
 
-pred_data_all <- index_grid %>%
-  filter()
-  replicate_df(index_grid, "month_adj", 1:12) %>%
+
+# Loading prediction grid for proportional composition 
+prop_grid <- readRDS(here::here("data", "gsi-prop-grid.rds"))
+
+prop_grid_2 <- prop_grid %>%
+  # filter(row_number() %% 5 == 1) %>% ### DOWNSAMPLING GRID %>%
+  # arrange(X,Y) %>%
+  # filter(row_number() %% 5 == 1) %>% ### DOWNSAMPLING GRID %>%
+  mutate(year = 2019L,
+         year_f = as.factor(year),
+         survey_f = as.factor("hss"),
+         target_depth = 0,
+         day_night = "DAY",
+         scale_depth = -0.5427145
+  )
+
+dim(prop_grid)
+dim(prop_grid_2)
+
+
+grid_months <- prop_grid %>%
+  replicate_df(., "region", levels(dat$region)) %>% # c("WCVI", "North/Central BC", "Columbia")) %>%
+  replicate_df(., "month", c(3:11)) %>%
+  mutate(month = as.numeric(month), 
+         region = as.factor(region),
+         #yday = 160,
+         utm_x_1000 = X/1000,
+         utm_y_1000 = Y/1000,
+         year_adj_f = as.factor(2019),
+         month_f = month(month, label = TRUE),
+         month_adj = ifelse(month > 2, month - 2, month + 10), # adjusting to start in March
+         scale_month_adj = scale_est(month_adj, dat$month_adj),
+         NULL) %>%
+  filter(!month_adj %in% c(11)) #
+
+glimpse(grid_months)
+unique(grid_months$month_adj)
+unique(grid_months$month)
+
+grid_region <- grid_months %>% group_split(group_id = region) 
+glimpse(grid_region)
+#newdata <- dat %>% filter(region == "WCVI")
+#region <- "WCVI"
+
+prop_grid_all <- prop_grid %>%
+  select(-label, -elevation_meter, -X, -Y, slope_degree, coast_distance_meter, -FID, -target_depth) %>%
+  replicate_df("month_adj", 1:9) %>%
   mutate(scale_month_adj = scale_est(month_adj, dat$month_adj)) %>%
-  replicate_df("region", unique(dat$region))
-glimpse(pred_data_all)
+  replicate_df("region", sort(levels(dat$region)))
 
+glimpse(prop_grid_all)
 
-pred_data <- pred_data_all[1:10000,]
+prop_grid_tbl <- prop_grid_all %>%
+  group_split(group_id = region) 
+glimpse(prop_grid_tbl)
 
-sm_pred <- sdmTMB:::parse_smoothers(stock_prop ~ 0 + region + (1 | year_adj_f) + 
-                             s(scale_month_adj, by = region, bs = "tp", k = 6), 
-                           data = dat,
-                           newdata = pred_data, 
-                           basis_prev = sm$basis_out)
-# sm <- sdmTMB:::parse_smoothers(stock_prop ~  0 + region + (1 | year_f)
-#                                + s(month_adj, by = region, bs = "tp", k = 6), dat)
-tmb_newdata <- list(
-  observed = numeric(nrow(pred_data)),
-  covariate = pred_data$region,
-  mesh = sdmTMB_mesh$mesh,
-  offset = rep(median(dat$effort), nrow(pred_data)),
-  spde_m =  sdmTMB:::get_spde_matrices(sdmTMB_mesh), # change names for Q_spde functions # sdmTMB_mesh$spde,
-  spde_aniso = sdmTMB:::make_anisotropy_spde(sdmTMB_mesh),
-  spde =  sdmTMB_mesh$spde, # change names for Q_spde functions # sdmTMB_mesh$spde,
-  year_f = as.factor(pred_data$year_adj_f),
-  interpolator_data = interpolator_data, # or A_st
-  timesteps = sort(unique(pred_data$month_adj)),
-  timesteps_et = 1:12,
-  n_t = length(unique(pred_data$month_adj)), 
-  n_tet = length(unique(pred_data$month_adj)), # +1 for extra_time
-  t_i = as.numeric(pred_data$month_adj),
-  nobs_RE = length(unique(pred_data$year_adj_f)),
-  RE_indexes = as.numeric(as.factor(pred_data$year_adj_f)),
-  mm_fixed = model.matrix(~ 0 + region, pred_data), # model matrix of fixed effects
-  Zs         = sm_pred$Zs, # optional smoother basis function matrices
-  Xs         = sm_pred$Xs, # optional s.moother linear effect matrix
-  b_smooth_start = sm_pred$b_smooth_start,
-  z_i = m_svc$tmb_data$z_i, # model.matrix(~ 0 + region, dat)
-  n_z = ncol(m_svc$tmb_data$z_i),
-  A_spatial_index = sdmTMB_mesh$sdm_spatial_id,
-  n_c = length(unique(pred_data$region)), # number of categories
-  c_i = as.integer(pred_data$region)
-)
+lapply(prop_grid_tbl, dim)
+glimpse(prop_grid_tbl)
 
-obj <- readRDS(file = "data/fits/stock-prop-grouped-rw-mapped-RTMB.rds")
-obj$fn()
+#@pred_data <- pred_dat_tbl$data[[1]]
 
-
-tmb_data <- tmb_newdata
 lp <- obj$env$last.par.best
-obj$report(par = lp)
-summary(sdreport(obj))
+
+pred_list_out <- map(
+  prop_grid_tbl,
+  function (x) {
+   # browser()
+
+    #x <- prop_grid_tbl$data[[1]]
+
+    sm_pred <- sdmTMB:::parse_smoothers(stock_prop ~ 0 + region + (1 | year_adj_f) + 
+                                          s(scale_month_adj, by = region, bs = "tp", k = 6), 
+                                        data = dat,
+                                        newdata = x, 
+                                        basis_prev = sm$basis_out)
+    
+    interpolator_data_pred <- fmesher::fm_basis(
+      mesh,
+      loc = as.matrix(x[, c("utm_x_1000", "utm_y_1000")]))
+      
+    tmb_newdata <- list(
+      observed = numeric(nrow(x)),
+      covariate = x$region,
+      mesh = sdmTMB_mesh$mesh,
+      offset = rep(median(dat$effort), nrow(x)),
+      spde_m =  sdmTMB:::get_spde_matrices(sdmTMB_mesh), # change names for Q_spde functions # sdmTMB_mesh$spde,
+      spde =  sdmTMB_mesh$spde, # change names for Q_spde functions # sdmTMB_mesh$spde,
+      year_f = as.factor(x$year_adj_f),
+      interpolator_data = interpolator_data_pred, # or A_st
+      timesteps = sort(unique(x$month_adj)),
+      timesteps_et = 1:12,
+      n_t = length(unique(x$month_adj)), 
+      n_tet = length(unique(x$month_adj)), # +1 for extra_time
+      t_i = as.numeric(x$month_adj),
+      nobs_RE = length(unique(x$year_adj_f)),
+      RE_indexes = as.numeric(as.factor(x$year_adj_f)),
+      mm_fixed = model.matrix(~ 0 + region, x), # model matrix of fixed effects
+      Zs         = sm_pred$Zs, # optional smoother basis function matrices
+      Xs         = sm_pred$Xs, # optional smoother linear effect matrix
+      b_smooth_start = sm_pred$b_smooth_start,
+      z_i = model.matrix(~ 0 + region * scale_month_adj, x), #  m_svc$tmb_data$z_i, # 
+      n_z = ncol(model.matrix(~ 0 + region * scale_month_adj, x)),
+      A_spatial_index = sdmTMB_mesh$sdm_spatial_id,
+      n_c = length(unique(dat$region)), # number of categories
+      c_i = as.integer(x$region)
+    )
+    
+    tmb_data <<- tmb_newdata # need to overwrite in global environment
+    pred_list <- obj$report(par = lp)
+    
+    #browser()
+    #glimpse(pred_list)
+    print(length(pred_list$mu))
+    print(paste0(unique(x$region), " done!"))
+    pred_list$mu
+})
+
+glimpse(pred_list_out)
+glimpse(prop_grid_tbl)
+
+saveRDS(pred_list_out, here::here("data", "pred_list_stock_comp_sdmTMB.rds"))
+
+prop_grid_all$pred <- unlist(pred_list_out)
+
+#### Estimating proportional contribution of each component
+pred_ic <- array(NA, dim = c(nrow(prop_grid_all)/nlevels(prop_grid_all$region), 
+                             nlevels(prop_grid_all$region)),
+                 dimnames = list(NULL, levels(prop_grid_all$region)))
+dim(pred_ic)
+
+for (i in seq_along(levels(prop_grid_all$region))) {
+  cur_region <- levels(prop_grid_all$region)[i]
+  pred_ic[,cur_region] <- filter(prop_grid_all, region == cur_region) %>% pull(pred)
+}
+head(pred_ic)
+
+# Normalize probability for each observation and class
+rowsum_pred_ic <- outer(rowSums(pred_ic), rep(1, ncol(pred_ic)))
+head(rowsum_pred_ic)
+
+prob_ic <- pred_ic / rowsum_pred_ic
+head(prob_ic)
+
+prob_list_out <- vector("list", 9)
+
+for (i in 1:length(prop_grid_tbl)) {
+  # browser()
+  cur_region <- unique(prop_grid_tbl[[i]]$region)
+  prob_list_out[[i]] <- prob_ic[, cur_region]
+}
+
+glimpse(prob_list_out)
+glimpse(pred_list_out)
+
+### DOUBLE CHECK THAT THESE ARE IN THE CORRECT ORDER!!!
+#prop_grid_all$pred <- unlist(pred_list_out)
+prop_grid_all$prob <- unlist(prob_list_out)
+
+glimpse(prob_list_out)
+glimpse(pred_list_out)
+
+glimpse(prop_grid_all)
+levels(prop_grid_all$region)
+
+
+saveRDS(prop_grid_all, here::here("data", "pred_grid_stock_prop_RTMB.rds"))
+
+prop_grid_all <- readRDS(here::here("data", "pred_grid_stock_prop_RTMB.rds"))
+
+source("R/plot_map.R")
+
+glimpse(prop_grid_all)
+levels(prop_grid_all$region)
+prop_grid_all$region <- fct_relevel(prop_grid_all$region, sort(levels(prop_grid_all$region)))
+levels(prop_grid_all$region)
+unique(prop_grid_all$month_adj)
+
+
+p <- prop_grid_all %>%
+  dplyr::select(utm_x_1000, utm_y_1000, prob, salmon_region = region, month_adj) %>%
+  mutate(month_f = month(month_adj + 2 , label = TRUE, abbr = TRUE)) %>%
+  ggplot(data = .) + # (dat, aes(X, Y, color = {{ column }})) +
+  geom_raster( aes(x=utm_x_1000, y=utm_y_1000, fill = prob)) +
+  scale_fill_viridis_c(name = "Probability of\nGSI assignment",#"Predicted\nnumber of\njuveniles\nin GSI samples",
+                       labels = scales::comma,#) +#,
+                       trans = ggsidekick::fourth_root_power_trans()) +
+  ggsidekick::theme_sleek() +
+  geom_sf(data = all_coast_km, color = "gray80", fill = "gray90") +
+  scale_x_continuous(name = NULL, limits = range(prop_grid_all$utm_x_1000), expand = c(0, 0)) +
+  scale_y_continuous(name = NULL, limits = range(prop_grid_all$utm_y_1000), expand = c(0, 0)) +
+  facet_grid(salmon_region ~ month_f)  +
+  ggtitle("Juvenile chinoook GSI (RTMB model with separate random walks for each group")
+
+p
+
+ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_mapped_tauZ_RTMB_groupedRW.png"), width = 14, height = 12)
+#ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_int_no_tauZ_map.png"), width = 14, height = 12)
+
+# checking that all region propoprtions sum up to 1
+prop_grid_all %>%
+  group_by(utm_x_1000, utm_y_1000, month_adj) %>%
+  summarise(total_prop = sum(prob)) %>%
+  pull(total_prop) %>%
+  range()

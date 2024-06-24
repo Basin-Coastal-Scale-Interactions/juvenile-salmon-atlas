@@ -10,7 +10,11 @@ library(sf)
 #  Load GSI data ------------------------------------------------------------
 
 dat <- readRDS(here::here("data", "chinook_gsi_counts.rds")) %>%
-  mutate(season_n = as.numeric(season_f))
+  mutate(season_n = as.numeric(season_f),
+         scale_month_adj = scale(month_adj)[, 1],
+         year_adj = ifelse(month > 2, year, year - 1), # adjusting year to represent fish cohorts
+         # year_f = as.factor(year),
+         year_adj_f = as.factor(year_adj))
 
 table(dat$region)
   
@@ -102,12 +106,13 @@ dat2 <- dat
 dat2$region <- fct_rev(dat2$region)
 
 #debugonce(sdmTMB)
+
 m_svc <- sdmTMB(
-  stock_prop ~ 0 + region + (1 | year_f) + s(month_adj, by = region, bs = "tp", k = 6), 
+  stock_prop ~ 0 + region + (1 | year_adj_f) + s(scale_month_adj, by = region, bs = "tp", k = 6),
   family = tweedie(),
-  spatial_varying = ~ 0 + region * month_adj,
+  spatial_varying = ~ 0 + region * scale_month_adj,
   offset = dat$effort,
-  data = dat2,
+  data = dat,
   time = "month_adj",
   extra_time = c(2,11),
   spatial = "off",
@@ -115,37 +120,67 @@ m_svc <- sdmTMB(
   anisotropy = FALSE,
   mesh = sdmTMB_mesh,
   silent = FALSE,
-  control = sdmTMBcontrol(newton_loops = 1L),
+  control = sdmTMBcontrol(newton_loops = 0L, nlminb_loops = 1L),
   do_fit = FALSE
 )
 
-sanity(m)
+b_smooth_map <-  1:36
+b_smooth_map[33:36] <- NA
+b_smooth_map
 
-m
-m$sd_report
-tidy(m, "ran_pars", conf.int = TRUE)
+m_svc <- update(m_svc, do_fit = TRUE,
+                control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 9), rep(2, 9))),
+                                                   b_smooth = factor(b_smooth_map),
+                                                   ln_smooth_sigma = factor(c(1,2,3,4,5,6,7,8,NA)))
+                                        )
+                )
 
-saveRDS(m, file = here("data", "fits", "chinook_gsi_prop_svc_int_sdmTMB.rds"))
 
-saveRDS(m, file = here("data", "fits", "chinook_gsi_prop_sdmTMB.rds"))
-m <- readRDS(here::here("data", "fits", "chinook_gsi_prop_sdmTMB.rds"))
-m$formula
-m$time
-m$extra_time
+sanity(m_svc)
+
+m_svc
+m_svc$sd_report
+tidy(m_svc, "ran_pars", conf.int = TRUE)
+
+saveRDS(m_svc, file = here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
+
+
+m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
+m_svc$formula
+m_svc$time
+m_svc$extra_time
 
 
 
 ### PREDICTING 
 
+# Whole coast index grid that will get cut
+index_grid_old <- readRDS(here("data", "index_grid.rds")) 
+glimpse(index_grid_old)
 
+index_grid <- readRDS(here("data", "pred_grid_all_coast.rds")) %>%
+  # filter(row_number() %% 5 == 1) %>% ### DOWNSAMPLING GRID %>%
+  # arrange(X,Y) %>%
+  # filter(row_number() %% 5 == 1) %>% ### DOWNSAMPLING GRID %>%
+  mutate(year = 2019L, 
+         year_f = as.factor(year),
+         survey_f = as.factor("hss"),
+         target_depth = 0,
+         day_night = "DAY",
+         scale_depth = -0.5427145) %>%
+  rename(year_adj_f = year_f, year_adj = year)
+glimpse(index_grid)
+
+# Polygon of points from inner sdmTMB mesh
 ib_poly <- st_polygon(list(inner = rbind(innerbox,innerbox[1,])))
 st_crs(ib_poly)
 
 grid_sf <- index_grid %>% 
-  st_as_sf(., coords = c("utm_x_1000", "utm_y_1000"))
+  st_as_sf(., coords = c("utm_x_1000", "utm_y_1000"), remove = FALSE)
 
 # extract grid points that are within inner boundary of mesh
 prop_grid <- st_intersection(grid_sf, ib_poly) %>% sf::st_drop_geometry()
+glimpse(prop_grid)
 
 saveRDS(prop_grid, file = here("data", "gsi-prop-grid.rds"))
 # check
@@ -154,30 +189,40 @@ saveRDS(prop_grid, file = here("data", "gsi-prop-grid.rds"))
 
 prop_grid <- readRDS(here("data", "gsi-prop-grid.rds"))
 
-# extract events within ipes survey grid
+
+# functions for quickly applying and unapplying scale()
+scale_est <- function (x, unscaled_vec) {
+  sc <- scale(unscaled_vec)
+  sc_center <- attr(sc, "scaled:center")
+  sc_scale <- attr(sc, "scaled:scale")
+  (x - sc_center) / sc_scale
+}
+
 
 grid_months <- prop_grid %>%
   replicate_df(., "region", levels(dat$region)) %>% # c("WCVI", "North/Central BC", "Columbia")) %>%
   replicate_df(., "month", c(3:11)) %>%
   mutate(month = as.numeric(month), 
          region = as.factor(region),
-         yday = 160,
+         #yday = 160,
          utm_x_1000 = X/1000,
          utm_y_1000 = Y/1000,
+         year_adj_f = as.factor(2019),
          month_f = month(month, label = TRUE),
          month_adj = ifelse(month > 2, month - 2, month + 10), # adjusting to start in March
+         scale_month_adj = scale_est(month_adj, dat$month_adj),
          NULL) %>%
   filter(!month_adj %in% c(11)) #
 
-grid_region <- grid_months %>% group_split(group_id = region) 
+glimpse(grid_months)
 
+
+grid_region <- grid_months %>% group_split(group_id = region) 
+glimpse(grid_region)
 #newdata <- dat %>% filter(region == "WCVI")
 #region <- "WCVI"
 
-pred_ic <- array(NA, dim = c(nrow(grid_months)/nlevels(grid_months$region), nlevels(grid_months$region)),
-                               dimnames = list(NULL, levels(grid_months$region)))
-# se_pred_ic <- pred_ic
-dim(pred_ic)
+
 
 predict_list <- map(grid_region, function (newdata) {
   
@@ -186,14 +231,14 @@ predict_list <- map(grid_region, function (newdata) {
     
   # pred_list <- map(smaller_chunks,
   #                  ~predict(m, newdata = .x, se_fit = TRUE, re_form_iid = NA, 
-  #                          offset = rep.int(-6.287114, nrow(.x))))
+  #                          offset = rep.int(median(dat$effort), nrow(.x))))
   
   # pred_list <- map(smaller_chunks,
   #                  ~predict(m, newdata = .x, se_fit = FALSE, re_form_iid = NA, 
-  #                           offset = rep.int(-6.287114, nrow(.x))))
+  #                           offset = rep.int(median(dat$effort), nrow(.x))))
   
-  pred <- predict(m, newdata = newdata, se_fit = FALSE, re_form_iid = NA,
-          offset = rep.int(-6.287114, nrow(newdata)))
+  pred <- predict(m_svc, newdata = newdata, se_fit = FALSE, re_form_iid = NA,
+          offset = rep.int(median(dat$effort), nrow(newdata)))
   
   #pred <- bind_rows(pred_list)
   group_id <- as.character(unique(pred$region))
@@ -204,12 +249,17 @@ predict_list <- map(grid_region, function (newdata) {
   # print(head(pred_linkinv))
 
   #pred_ic[, group_id] 
-  pred$pred_i <- pred$est %>% m$family$linkinv() #pred_linkinv
+  pred$pred_i <- pred$est %>% m_svc$family$linkinv() #pred_linkinv
   pred
   #se_pred_ic[, group_id] <- pred$est_se
 })
 
 #pred <- bind_rows(predict_list)
+
+pred_ic <- array(NA, dim = c(nrow(grid_months)/nlevels(grid_months$region), nlevels(grid_months$region)),
+                 dimnames = list(NULL, levels(grid_months$region)))
+# se_pred_ic <- pred_ic
+dim(pred_ic)
 
 for (i in seq_along(levels(grid_months$region))) {
   cur_region <- levels(grid_months$region)[i]
@@ -253,7 +303,7 @@ head(rowsum_pred_ic)
 head(prob_ic)
 
 head(pred$prob_i)
-length(prob_i)
+length(pred$prob_i)
 
 pred %>%
   ggplot(data = .) +
@@ -271,24 +321,23 @@ hist(pred$prob_i)
 # pr1 <- predict(m, newdata = grid_months, 
 #           offset = rep.int(-6.287114, nrow(grid_months)), re_form_iid = NA) 
 
-saveRDS(pred, file = "data/fits/gsi-prediction-normalized-svc-int.rds")
-saveRDS(predict_list, file = "data/fits/gsi-prediction-list.rds")
+saveRDS(pred, file = "data/fits/gsi-prediction-normalized-svc-sdmTMB.rds")
+saveRDS(predict_list, file = "data/fits/gsi-prediction-normalized-svc-sdmTMB-list.rds")
 
 # pr1 <- readRDS("data/fits/gsi-prediction.rds")
 
-pred <- readRDS("data/fits/gsi-prediction-normalized.rds")
+pred <- readRDS("data/fits/gsi-prediction-normalized-svc-sdmTMB.rds")
 
 
 source("R/plot_map.R")
 
 p <- pred %>%
-  dplyr::select(-X,-Y,-lat, -lon, -group_id, -est_non_rf, -est_rf, -epsilon_st) %>%
-  rename(salmon_region = region) %>%
+  dplyr::select(utm_x_1000, utm_y_1000, prob_i, salmon_region = region, month_f) %>%
   ggplot(data = .) + # (dat, aes(X, Y, color = {{ column }})) +
   geom_raster( aes(x=utm_x_1000, y=utm_y_1000, fill = prob_i)) +
   scale_fill_viridis_c(name = "Probability of\nGSI assignment",#"Predicted\nnumber of\njuveniles\nin GSI samples",
                        labels = scales::comma,#) +#,
-                       trans = fourth_root_power_trans()) +
+                       trans = ggsidekick::fourth_root_power_trans()) +
   ggsidekick::theme_sleek() +
   geom_sf(data = all_coast_km, color = "gray80", fill = "gray90") +
   scale_x_continuous(name = NULL, limits = range(pred$utm_x_1000), expand = c(0, 0)) +
@@ -296,10 +345,10 @@ p <- pred %>%
   facet_grid(salmon_region ~ month_f)  +
   ggtitle("Juvenile chinoook GSI")
 
-
 p
 
-ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_int.png"), width = 14, height = 12)
+ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_mapped_tauZ_sdmTMB.png"), width = 14, height = 12)
+#ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_int_no_tauZ_map.png"), width = 14, height = 12)
 
 # +
 #   ggtitle(paste0("Predicted distribution of juvenile ", species," by month (denser mesh)")) +
