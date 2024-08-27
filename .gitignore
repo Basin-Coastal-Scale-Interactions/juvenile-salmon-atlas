@@ -7,3 +7,7 @@ data/fits/*
 R/mwes/*
 R/old/*
 R/blas-test.R
+R/99_sdmTMB_bug_testing.R
+R/dist_to_coast_from_raster.R
+R/trimmed_dataset_checks.R
+
