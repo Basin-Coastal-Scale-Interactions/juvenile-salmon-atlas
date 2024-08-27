@@ -6,7 +6,7 @@ library(sdmTMB)
 #library(Matrix)
 # Load data & functions -----------------------------------------------------
 
-dat <- readRDS(here::here("data", "chinook_gsi_counts.rds")) %>%
+dat <- readRDS(here::here("data", "chinook_gsi_counts_20240722.rds")) %>%
   mutate(season_n = as.numeric(season_f),
   scale_month_adj = scale(month_adj)[, 1],
   year_adj = ifelse(month > 2, year, year - 1), # adjusting year to represent fish cohorts
@@ -265,14 +265,16 @@ glimpse(par)
 
 # fixing the last element of the smoother as it otherwise estimates a very high log_smooth_sigma
 b_smooth_map <-  1:36
-b_smooth_map[33:36] <- NA
+b_smooth_map[c(13:16, 21:24)] <- NA
 b_smooth_map
+
+6*4+1
 
 # debugonce(nll)
 obj <- MakeADFun(nll, par, random = c("RE", "rf", "rf2", "b_smooth"), 
                  map = list(log_tau_Z = factor(c(rep(1, 9), rep(2, 9))),
                             b_smooth = factor(b_smooth_map),
-                            log_smooth_sigma = factor(c(1,2,3,4,5,6,7,8,NA))
+                            log_smooth_sigma = factor(c(1,2,3,NA,5,NA,7,8,9))
                             ),
                 # profile = c("b_j", "bs"),
                  silent = FALSE)  #< NEW: rf0 added
@@ -282,8 +284,8 @@ opt <- nlminb(obj$par, obj$fn, obj$gr)
 sdrep <- sdreport(obj)
 sdrep
 
-#saveRDS(obj, file = "data/fits/stock-prop-grouped-rw-RTMB.rds")
-#saveRDS(obj, file = "data/fits/stock-prop-grouped-rw-mapped-RTMB.rds")
+saveRDS(obj, file = "data/fits/stock-prop-grouped-rw-RTMB.rds")
+saveRDS(obj, file = "data/fits/stock-prop-grouped-rw-mapped-RTMB.rds")
 
 
 # m_svc <- update(m_svc, do_fit = TRUE, 
@@ -383,7 +385,8 @@ prop_grid_all <- prop_grid %>%
   select(-label, -elevation_meter, -X, -Y, slope_degree, coast_distance_meter, -FID, -target_depth) %>%
   replicate_df("month_adj", 1:9) %>%
   mutate(scale_month_adj = scale_est(month_adj, dat$month_adj)) %>%
-  replicate_df("region", sort(levels(dat$region)))
+  replicate_df("region", sort(levels(dat$region))) %>%
+  mutate(region = as.factor(region))
 
 glimpse(prop_grid_all)
 
@@ -401,10 +404,11 @@ lp <- obj$env$last.par.best
 pred_list_out <- map(
   prop_grid_tbl,
   function (x) {
-   # browser()
+    #browser()
 
     #x <- prop_grid_tbl$data[[1]]
 
+  
     sm_pred <- sdmTMB:::parse_smoothers(stock_prop ~ 0 + region + (1 | year_adj_f) + 
                                           s(scale_month_adj, by = region, bs = "tp", k = 6), 
                                         data = dat,
@@ -455,7 +459,7 @@ pred_list_out <- map(
 glimpse(pred_list_out)
 glimpse(prop_grid_tbl)
 
-saveRDS(pred_list_out, here::here("data", "pred_list_stock_comp_sdmTMB.rds"))
+saveRDS(pred_list_out, here::here("data", "pred_list_stock_comp_sdmTMB_20240723.rds"))
 
 prop_grid_all$pred <- unlist(pred_list_out)
 
@@ -500,7 +504,7 @@ glimpse(prop_grid_all)
 levels(prop_grid_all$region)
 
 
-saveRDS(prop_grid_all, here::here("data", "pred_grid_stock_prop_RTMB.rds"))
+saveRDS(prop_grid_all, here::here("data", "pred_grid_stock_prop_RTMB_20240723.rds"))
 
 prop_grid_all <- readRDS(here::here("data", "pred_grid_stock_prop_RTMB.rds"))
 
@@ -530,7 +534,7 @@ p <- prop_grid_all %>%
 
 p
 
-ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_mapped_tauZ_RTMB_groupedRW.png"), width = 14, height = 12)
+ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_mapped_tauZ_RTMB_groupedRW_20240723.png"), width = 14, height = 12)
 #ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_int_no_tauZ_map.png"), width = 14, height = 12)
 
 # checking that all region propoprtions sum up to 1

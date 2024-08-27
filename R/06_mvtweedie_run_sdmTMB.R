@@ -9,7 +9,7 @@ library(here)
 library(sf)
 #  Load GSI data ------------------------------------------------------------
 
-dat <- readRDS(here::here("data", "chinook_gsi_counts.rds")) %>%
+dat <- readRDS(here::here("data", "chinook_gsi_counts_20240725.rds")) %>%
   mutate(season_n = as.numeric(season_f),
          scale_month_adj = scale(month_adj)[, 1],
          year_adj = ifelse(month > 2, year, year - 1), # adjusting year to represent fish cohorts
@@ -34,15 +34,19 @@ ggplot(dat, aes(utm_x, utm_y, colour = stock_prop)) +
   geom_point() +
   facet_wrap(~month)
 
+# observations
+ggplot(dat, aes(utm_x, utm_y, colour = stock_prop)) +
+  geom_point() +
+  facet_wrap(~region)
 # Mesh and SPDE matrix construction -----------------------------------------
 
 dat_coords <- dat %>% 
   select(utm_x_1000, utm_y_1000) %>% 
   as.matrix()
 
-inla_mesh_raw <- INLA::inla.mesh.2d(
+inla_mesh_raw <- fmesher::fm_mesh_2d_inla(
   loc = dat_coords,
-  max.edge = c(2, 10) * 500,
+  max.edge = 500,
   cutoff = 30,
   offset = c(10, 50)
 )  
@@ -129,9 +133,10 @@ b_smooth_map[33:36] <- NA
 b_smooth_map
 
 m_svc <- update(m_svc, do_fit = TRUE,
-                control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 9), rep(2, 9))),
-                                                   b_smooth = factor(b_smooth_map),
-                                                   ln_smooth_sigma = factor(c(1,2,3,4,5,6,7,8,NA)))
+                control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 10), rep(2, 10)))
+                                                   #b_smooth = factor(b_smooth_map),
+                                                   #ln_smooth_sigma = factor(c(1,2,3,4,5,6,7,8,NA)
+                                                   ))
                                         )
                 )
 
@@ -150,6 +155,7 @@ m_svc$formula
 m_svc$time
 m_svc$extra_time
 
+m_svc$data$region %>% table
 
 
 ### PREDICTING 
@@ -256,7 +262,8 @@ predict_list <- map(grid_region, function (newdata) {
 
 #pred <- bind_rows(predict_list)
 
-pred_ic <- array(NA, dim = c(nrow(grid_months)/nlevels(grid_months$region), nlevels(grid_months$region)),
+pred_ic <- array(NA, dim = c(nrow(grid_months)/nlevels(grid_months$region), 
+                             nlevels(grid_months$region)),
                  dimnames = list(NULL, levels(grid_months$region)))
 # se_pred_ic <- pred_ic
 dim(pred_ic)
@@ -310,10 +317,8 @@ pred %>%
   geom_histogram(aes(prob_i)) +
   facet_grid(region ~ month) 
 
-
-
 glimpse(predict_list)
-glimpse(prob_i)
+#glimpse(prob_i)
 
 hist(pred$pred_i)
 hist(pred$prob_i)
@@ -347,7 +352,7 @@ p <- pred %>%
 
 p
 
-ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_mapped_tauZ_sdmTMB.png"), width = 14, height = 12)
+ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_mapped_tauZ_sdmTMB_20240725.png"), width = 14, height = 12)
 #ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_int_no_tauZ_map.png"), width = 14, height = 12)
 
 # +

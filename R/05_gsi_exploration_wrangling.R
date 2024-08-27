@@ -27,22 +27,22 @@ glimpse(bridge)
 
 
 # reading GSI data (import has data from 1998 to 2021)
-gsi <- read_xlsx("data-raw/CHINOOK_event_catch_top_gsi_20240212.xlsx") %>%
-  janitor::clean_names()
-
-gsi_mu <- read_xlsx("data-raw/CHINOOK_event_catch_top_gsi_20240212.xlsx",
-                            sheet = "catch_top_mu") %>%
-  janitor::clean_names() %>%
-  mutate(unique_event = gsub("-124J", "", unique_catch))
-         #year = as.numeric(sub("\\D*(\\d{4}).*", "\\1", unique_event)))
-
-# same data set but arranged by fish rather than by tow
-gsi_by_fish <- read_xlsx("data-raw/CHINOOK_fish_top_gsi_20240212.xlsx",
-                         sheet = "top_mu") %>%
-  janitor::clean_names() %>%
-  mutate(unique_event = gsub("-124[JA]?-.+$", "", unique_fish)) 
-
-gsi_by_fish[grep("124A", gsi_by_fish$unique_fish),] 
+# gsi <- read_xlsx("data-raw/CHINOOK_event_catch_top_gsi_20240212.xlsx") %>%
+#   janitor::clean_names()
+# 
+# gsi_mu <- read_xlsx("data-raw/CHINOOK_event_catch_top_gsi_20240212.xlsx",
+#                             sheet = "catch_top_mu") %>%
+#   janitor::clean_names() %>%
+#   mutate(unique_event = gsub("-124J", "", unique_catch))
+#          #year = as.numeric(sub("\\D*(\\d{4}).*", "\\1", unique_event)))
+# 
+# # same data set but arranged by fish rather than by tow
+# gsi_by_fish <- read_xlsx("data-raw/CHINOOK_fish_top_gsi_20240212.xlsx",
+#                          sheet = "top_mu") %>%
+#   janitor::clean_names() %>%
+#   mutate(unique_event = gsub("-124[JA]?-.+$", "", unique_fish)) 
+# 
+# gsi_by_fish[grep("124A", gsi_by_fish$unique_fish),] 
 # checked this fish and this is a juvenile based on size that was originally
 # labeled as an adult
 
@@ -51,7 +51,7 @@ gsi_all_mu_in <- read_xlsx(here("data-raw", "CHINOOK_fish_all_gsi_20240424.xlsx"
   janitor::clean_names()
 glimpse(gsi_all_mu_in)
 
-# All percentages for all fish at MU level
+# All percentages for all fish at stock level
 gsi_all_stock_in <- read_xlsx(here("data-raw", "CHINOOK_fish_all_gsi_20240424.xlsx"), sheet = "all_stock") %>%
   janitor::clean_names()
 glimpse(gsi_all_stock_in)
@@ -64,41 +64,104 @@ event_key <- read_xlsx(here("data-raw", "CHINOOK_fish_all_gsi_20240424.xlsx"), s
 
 #stock_key <-readRDS("data-raw/finalStockList_Mar2024.rds")
 #stock_key <-read_csv("data-raw/finalStockList_Mar2024_updatedSeb.csv")
-stock_key <-read_csv("data-raw/finalStockList_Apr2024.csv")
+# stock_key <-read_csv("data-raw/finalStockList_Apr2024.csv")
+# stock Key from Cam with juvenile marine groupings July 22 2024
+#stock_key_old <- readRDS("data-raw/juvenile-marine-chinook-key-20240722.rds") 
+#stock_key <- readRDS("data-raw/juvenile-marine-chinook-key-20240725.rds") 
+stock_key <- read_csv("data-raw/juvenile-marine-chinook-key-20240725.csv") 
+
+
+stock_key %>% filter(Region3Name == "North/Central BC") %>%
+  pull(juv_marine_updated) %>% unique()
 
 filter(stock_key, grepl("^LEWIS", stock))
 
+#gsi_all <- left_join(gsi_all_mu_in, event_key, by = "unique_fish") 
 
-gsi_all <- left_join(gsi_all_mu_in, event_key, by = "unique_fish") 
+# Joining GSI data with event key and then joining with stock key
 
 gsi_all_stock <- left_join(gsi_all_stock_in, event_key, by = "unique_fish") %>%
   rename(stock = stock_final) %>%
   mutate(stock = if_else(stock == "LEWIS_ LAKE", "LEWIS_LAKE", stock)) %>% # Renaming misspelled stock
-  left_join(select(stock_key, stock, Region3Name), by = "stock") %>% # SELECTING REGION3 HERE
-  select(unique_event, unique_fish, stock, region = Region3Name, stock_prob)  
+  left_join(select(stock_key, stock, juv_marine_updated), by = "stock") %>% # SELECTING REGION3 HERE
+  select(unique_event, unique_fish, stock, region = juv_marine_updated, stock_prob)
+  # Need to define "region" to either Region2Name or Region3Name if using other stock key
+  # left_join(select(stock_key, stock, Region1Name, Region2Name, Region3Name), by = "stock") %>% # SELECTING REGION3 HERE
+  # select(unique_event, unique_fish, region = Region3Name, stock_prob)
+
+# table(gsi_all_stock$Region1Name)
+# table(gsi_all_stock$Region2Name)
+# table(gsi_all_stock$Region3Name)
 
 table(gsi_all_stock$region)
 
-nas <- gsi_all[is.na(gsi_all$mu_name),]
-nas2 <- gsi_all_stock[is.na(gsi_all_stock$region), ]
+baselines_tb <- gsi_all_stock %>% 
+  drop_na() %>%
+  filter(region != "Cali", stock_prob >= 20) %>%
+  mutate(Region = fct_recode(region,
+                      "Fraser Summer 4.1" = "Fraser_Summer_4.1",
+                      "Northern BC/AK" = "NBC_SEAK"           
+  )) %>%
+  mutate(Region = fct_relevel(Region,
+                              c("Northern BC/AK", "Central BC", "SoG Coastal", 
+                                "WCVI", "Fraser Yearling",   "Fraser Summer 4.1", 
+                                "WA/OR Coastal", "Col. Coastal", "Col. North", 
+                              "Upper Col. Yearling"))) %>%
+  group_by(Region) %>%
+  reframe(Baselines = str_to_title(str_replace_all(unique(stock), "_", " "))) %>% 
+  group_split(group_id = rep(1:3, times = 70)) %>% 
+  map(function (x) select(x, -group_id))%>%bind_cols(.name_repair = "minimal")
 
-unique(nas2$stock)
-
-table(nas2$stock)
 
 
-table(gsi_all$mu_name)
-levels(factor(gsi_all$mu_name))
+library(kableExtra)
+baselines_kb <- knitr::kable(list(baselines_tb), format = "latex", align = "|ll|ll|ll|",
+             caption = "Genetic stock identification (GSI) assignment baselines detected\
+             in all sampled juvenile chinook salmon with values higher than 0.2.") %>%
+  kable_styling(font_size = 6)
 
+
+writeLines(baselines_kb, here("tables","baselines.tex"))
+
+
+library(xtable)
+xtable(baselines_tb)
+
+# gsi_all_stock %>%
+#   select(Region1Name, Region2Name, Region3Name) %>%
+#   distinct() %>% print(n = 46)
+# 
+# gsi_all_stock %>%
+#   select(Region1Name, Region2Name, Region3Name) %>%
+#   group_by(Region1Name, Region2Name) %>%
+#   reframe(count = n(), 
+#             Region3Name = unique(Region3Name) )%>% 
+#   print(n = 46)
+
+#nas_mu <- gsi_all[is.na(gsi_all$mu_name),]
+nas_stock <- gsi_all_stock[is.na(gsi_all_stock$region), ]
+
+unique(nas_stock$stock)
+table(nas_stock$stock)
+
+# table(gsi_all$mu_name)
+# levels(factor(gsi_all$mu_name))
 
 table(gsi_all_stock$region)
 levels(factor(gsi_all_stock$region))
 
+# Only 8 fish are from Cali region and have a GSI probability greater than 40%
+# of which half are from hatchery origins
+gsi_all_stock %>%
+  filter(region == "Cali" & stock_prob > 40) %>% print(n = 68)
+
 ##########
 
+# Wrangling data so that there are columns for all regions  with zeroes for 
+# each unique event where GSI regions are absent
 gsi_all_stock_grouped <- gsi_all_stock %>% filter(!is.na(region)) %>% 
   select(-stock) %>%
-  mutate(region = fct_other(region, drop = "Fraser River", other_level = "SOG")) %>% # Combining Fraser into SOG
+  #mutate(region = fct_other(region, drop = "Fraser River", other_level = "SOG")) %>% # Combining Fraser into SOG
   complete(region, nesting(unique_event, unique_fish)) %>%
   mutate(stock_prop = if_else(is.na(stock_prob), 0, stock_prob/100)) %>% # converting NAs to zeros
   group_by(unique_event, region) %>% # adding probabilities for across all fish in each unique_event
@@ -122,17 +185,18 @@ highratios <- gsi_all_stock_grouped %>%
   summarise(ratio = sum(stock_prop)/unique(n_fish)) %>%
   filter(ratio > 1) %>% pull(unique_event)
 
-
+# Looking at unique fish with total GSI probabilities higher than 1 and
+# lower than 0.4
 filter(gsi_all_stock, unique_event %in% lowratios) %>% print(n = 90)
 filter(gsi_all_stock, unique_event %in% highratios) %>% print(n = 90)
 
-filter(gsi_all_stock)
 
 filter(gsi_all_stock, unique_event == "BCSI-201731-HW01")
 filter(gsi_all, unique_event == "BCSI-201731-HW01")
 
-
+# Removing "Cali" region here
 chinook_gsi_counts <- inner_join(gsi_all_stock_grouped, bridge, by = "unique_event") %>%
+  filter(region != "Cali") %>%
   mutate(
     region = as.factor(region),
     year_f = as.factor(year),
@@ -146,9 +210,12 @@ chinook_gsi_counts <- inner_join(gsi_all_stock_grouped, bridge, by = "unique_eve
     scale_depth = scale(as.numeric(target_depth))[ , 1],
     year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
     day_night = as.factor(day_night))
+
 glimpse(chinook_gsi_counts)
 
-saveRDS(chinook_gsi_counts, file = here("data", "chinook_gsi_counts.rds"))
+table(chinook_gsi_counts$region)
+
+saveRDS(chinook_gsi_counts, file = here("data", "chinook_gsi_counts_20240725.rds"))
 
 
 
