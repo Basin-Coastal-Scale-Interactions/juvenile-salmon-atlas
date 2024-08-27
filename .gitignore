@@ -6,3 +6,4 @@ figs/*
 data/fits/*
 R/mwes/*
 R/old/*
+R/blas-test.R

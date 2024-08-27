@@ -98,10 +98,11 @@ bound_outer <- diff(range(st_dc[,1]))/3
 mesh4 <-  fm_mesh_2d_inla(
   loc = dat_coords,
   cutoff = 21,
-  max.edge = c(1, 2) * max_edge#,
+  max.edge = c(1,2) * max_edge#,
   #offset = c(max_edge, bound_outer)
 )
 mesh4
+plot(mesh4)
 
 
 
@@ -127,6 +128,7 @@ dmesh <- make_mesh(dat %>%
 dmesh$mesh$n
 
 plot(dmesh)
+plot(all_coast_km)
 
 plot_mesh <- function (x, ...) 
 {
