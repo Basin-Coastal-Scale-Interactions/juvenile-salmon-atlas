@@ -6,6 +6,7 @@
 library(tidyverse)
 library(sf)
 library(sp)
+library(hms)
 
 
 # add lat/lon
@@ -27,22 +28,102 @@ get_ll <- function(x, y, zone, loc){
   }
 }
 
+## add UTM to bridge
+
+# this code uses the start longitude to get the UTM zone. 
+##  NOTE that for some modelling consistent zone of 9 more appropriate 
+
+## use zone = 9 for bc coastwide modelling as per Sean Anderfson suggestion. 
+##  use zone = "vary" if you want the correct utm zone for the longitude to be used
+##  note that data transcribed from multiple zone transformation should not be combined
+
+get_utm <- function(x, y, zone, loc){
+  
+  if (zone == "9") {
+    utm_zone <- zone
+  } else if (zone == "vary") {
+    utm_zone <- floor((x/6)+31)
+  }
+  
+  epsg = paste0("+init=epsg:326",(str_pad(utm_zone, 2,
+                                          side = "left", pad = "0")))
+  
+  points = SpatialPoints(cbind(x, y),
+                         proj4string = CRS("+proj=longlat +datum=WGS84"))
+  
+  points_utm = spTransform(points, CRSobj = CRS(epsg))
+  
+  if (loc == "x") {
+    return(coordinates(points_utm)[,1])
+  } else if (loc == "y") {
+    return(coordinates(points_utm)[,2])
+  } else if (loc == "z") {
+    return(utm_zone)
+  }
+}
+
+get_utm <- function(x, y, zone, loc){
+  points = SpatialPoints(cbind(x, y),
+                         proj4string = CRS("+proj=longlat +datum=WGS84"))
+  points_utm = spTransform(
+    points, CRS(paste0("+proj=utm +zone=",zone[1]," +units=m"))
+  )
+  if (loc == "x") {
+    return(coordinates(points_utm)[,1])
+  } else if (loc == "y") {
+    return(coordinates(points_utm)[,2])
+  }
+}
+
+# 
+# testutm <- test1 %>% 
+#   mutate(
+#     utm_x = get_utm(START_LONGITUDE, START_LATITUDE, zone = 9, loc = "x"),
+#     utm_y = get_utm(START_LONGITUDE, START_LATITUDE, zone = 9, loc = "y"),
+#     utm_zone = get_utm(START_LONGITUDE, START_LATITUDE, zone = 9, loc = "z")
+#   ) 
+
+
+
+
 
 ### current dataset provided by A Tabata via email on Jan 3, 2024
-dat_in <- read.csv(
-  here::here(
-    "data-raw", "index_data_20240103.csv"
-  ),
-  stringsAsFactors = FALSE
-) %>% 
+
+# dat_in <- read.csv(
+#   here::here(
+#     "data-raw", "index_data_20240103.csv"
+#   ),
+#   stringsAsFactors = FALSE
+# ) %>% 
+#   janitor::clean_names() %>% 
+#   mutate(
+#     lon = get_ll(utm_x, utm_y, zone = "9", loc = "x"),
+#     lat = get_ll(utm_x, utm_y, zone = "9", loc = "y")
+#   )
+# 
+# glimpse(dat_in)
+
+
+### Data pull done by myself using Amy's code and local db version BCSI_be_20240918
+## Nov 20 2024 update
+## This data set does not have missing species in tows with zero salmon
+## so no need to wrangle as below
+dat_in <- read.csv(here::here("data-raw", "Seb_SalmonCounts_all_20250121.csv"),
+                    stringsAsFactors = FALSE) %>% 
   janitor::clean_names() %>% 
   mutate(
-    lon = get_ll(utm_x, utm_y, zone = "9", loc = "x"),
-    lat = get_ll(utm_x, utm_y, zone = "9", loc = "y")
+         utm_x = get_utm(lon, lat, zone = 9, loc = "x"),
+         utm_y = get_utm(lon, lat, zone = 9, loc = "y"),
   )
+glimpse(dat_in)
+
 
 
 ## MISSING EVENTS WITH ZERO TOTAL CATCHES --------------------------------------
+
+dat_in %>% group_by(unique_event) %>%
+  summarise(n = n()) %>%
+  pull(n) %>% range()
 
 # catch data excludes stations w/ 0 catches for all species; correct and check
 dat_in %>% group_by(unique_event) %>%
@@ -84,16 +165,37 @@ catch_out <- dat_in %>%
   filter(!is.na(n_total)) %>% 
   rbind(., bind_rows(catch_list))
 
+identical(catch_out, dat_in)
+
 # This illustrates the before/after of the checklists with zero catches
 dat_in %>% filter(unique_event == "BCSI-201778-QCSD01")
 catch_out %>% filter(unique_event == "BCSI-201778-QCSD01")
 
 dim(dat_in)
 dim(catch_out)
+#dat_in <- catch_out
 
-dat_in <- catch_out
+### checking for samples with empty day_night field 
 
+dn <- filter(dat_in, day_night == "")
+dn2023 <- filter(dat_in, year == "2023")
 
+# creating new column with new day_night value based on time of date field
+# however this can be problematic as sometimes there can be a lag between
+# the start of a unique_event and the time fishing begins.
+# Need tow start or end time instead.
+# Also, can use the oce package to quickly calculate sunset/sunrise based on 
+# local time and lat/lon using sunAngle()
+dat_in %>%
+  mutate(time = as_hms(ymd_hms(date)),
+         diff = Mod(difftime(time, as_hms("13:00:00"), units = "hours")),
+         dn = case_when(
+           diff > 8 & time != as_hms("00:00:00") ~ "NIGHT",
+           diff <= 8 & time != as_hms("00:00:00") ~ "DAY",
+           time == as_hms("00:00:00") ~ "notime")
+  ) %>%
+  filter(scientific_name == "ONCORHYNCHUS TSHAWYTSCHA" & dn != day_night & dn != "notime") %>%
+  select(unique_event, date, time, day_night, dn) 
 
 ## FLAG IPES -------------------------------------------------------------------
 
@@ -135,9 +237,9 @@ yr_key <- data.frame(
 
 ## MISSING BATHY DATA ----------------------------------------------------------
 
-missing_bathy <- dat_in %>%
-  filter(
-    is.na(depth_mean_m) | depth_mean_m < 0)
+missing_bathy <- dat_in # %>%
+ # no depth_mean_m column at the moment as don't have that db table
+ # filter(is.na(depth_mean_m) | depth_mean_m < 0) 
 
 dim(missing_bathy)
 
@@ -173,6 +275,7 @@ bathy_matrix <- matrix(data = NA,
 for (i in 1:nrow(bathy_matrix)) {
   bathy_matrix[i, ] <- bathy_grid[i, ] %>% as.numeric()
 }
+
 dimnames(bathy_matrix) <- dimnames(bathy_grid)
 bathy_df <- data.frame(
   lon = rownames(bathy_matrix),
@@ -195,7 +298,7 @@ tt <- hutilscpp::match_nrst_haversine(
   addresses_lon = as.numeric(bathy_df_trim$lon)
 )
 missing_bathy$pred_depth_mean_m <- -1 * bathy_df_trim$depth[tt$pos]
-
+hist(missing_bathy$pred_depth_mean_m)
 
 ## MISSING BRIDGE DATA ---------------------------------------------------------
 
@@ -203,16 +306,17 @@ imp_dat <- dat_in %>%
   mutate(
     # replace 0s
     volume_km3 = ifelse(volume_km3 == "0", NaN, volume_km3),
-    dist_to_coast_km = ifelse(dist_to_coast_km == "0", NaN, dist_to_coast_km),
+   # dist_to_coast_km = ifelse(dist_to_coast_km == "0", NaN, dist_to_coast_km), # No dist_to_coast_km
+   NULL
   ) 
 
 
 
 # small number so probably fine but should ultimately redo distance coast calc
-imp_dist <- imp_dat %>% 
-  select(unique_event, utm_x, utm_y, dist_to_coast_km) %>%
-  distinct() %>% 
-  VIM::kNN(.) 
+# imp_dist <- imp_dat %>% 
+#   select(unique_event, utm_x, utm_y, dist_to_coast_km) %>%
+#   distinct() %>% 
+#   VIM::kNN(.) 
 
 # NOTE THIS SHOULD BE REPEATED WITH MORE BRIDGE VARIABLES
 imp_eff <- imp_dat %>% 
@@ -222,12 +326,14 @@ imp_eff <- imp_dat %>%
   VIM::kNN(.) 
 
 
+
+
 ## REJOIN ----------------------------------------------------------------------
 
 dat <- dat_in %>%
   #remove data imputed above
-  select(-c(utm_x, utm_y, year, week, target_depth, volume_km3, 
-            dist_to_coast_km)) %>%
+  select(-c(utm_x, utm_y, year, week, target_depth, volume_km3#,  dist_to_coast_km
+            )) %>%
   # add missing bathy data
   left_join(
     ., 
@@ -241,11 +347,11 @@ dat <- dat_in %>%
     by = "unique_event"
   ) %>%
   # add imputed distance data
-  left_join(
-    ., 
-    imp_dist %>% select(-ends_with("imp"), -utm_x, -utm_y),
-    by = "unique_event"
-  ) %>%
+  # left_join(
+  #   ., 
+  #   imp_dist %>% select(-ends_with("imp"), -utm_x, -utm_y),
+  #   by = "unique_event"
+  # ) %>%
   # add cycle line IDs
   left_join(
     ., 
@@ -254,9 +360,11 @@ dat <- dat_in %>%
   ) %>%
   mutate(
     # use predicted depth if actual is missing
-    depth_mean_m = ifelse(
-      is.na(pred_depth_mean_m), depth_mean_m, pred_depth_mean_m
-    ),
+    # or in this case always use predicted depth as no depth available from db
+    # depth_mean_m = ifelse(
+    #   is.na(pred_depth_mean_m), depth_mean_m, pred_depth_mean_m
+    # ),
+    depth_mean_m = pred_depth_mean_m,
     #add common names
     species = case_when(
       grepl("GORBUSCHA", scientific_name) ~ "pink",
@@ -275,7 +383,8 @@ dat <- dat_in %>%
       as.factor(.),
     # define core area as square around BC (with a little of AK and WA)
     synoptic_station = ifelse(
-      lat > 47 &  lat < 56 &  # #!grepl("GS", unique_event) & 
+      lat > 47 & lat < 57 &  # #!grepl("GS", unique_event) &  
+        # Originally cutting at 56 N but if we want to include Sumner St in AK then changing to 57 N
         lon > -136, 
       TRUE,
       FALSE
@@ -310,8 +419,8 @@ dat_trim <- dat %>%
     # Importantly, 1995 has data for April, which no other year has
     # year >= 1998,
     # exclude SoG and Puget Sound PFMAs
-    !pfma %in% c("13", "14", "15", "16", "17", "18", "19","28", "29",
-                 "AKPEN", "KI", "OR", "PS", "PWS", "SCA"), # PS = Puget Sound
+    # !pfma %in% c("13", "14", "15", "16", "17", "18", "19","28", "29", # This line is all SoG PFMAs
+    #              "AKPEN", "KI", "OR", "PS", "PWS", "SCA"), # PS = Puget Sound
     # OFF (offshore), SEA(southeast Alaska) and ISEA (Inner southeast Alaska)
     # have points that are within synoptic station that are useful for modelling 
     # So they aren't excluded.
@@ -322,28 +431,38 @@ dat_trim <- dat %>%
   ) %>%
   select(unique_event, date, year, year_f, month, week, day, yday, day_night,
          pink_cycle, sox_cycle, pfma,
-         season_f, survey_f, lat, lon, utm_x, utm_y, target_depth, depth_mean_m, 
-         dist_to_coast_km, volume_km3, n_juv, n_ad, n_total, species) %>% 
+         season_f, survey_f, lat, lon, utm_x, utm_y, target_depth, depth_mean_m,# dist_to_coast_km, 
+         volume_km3, n_juv, n_ad, n_total, species) %>% 
   droplevels()
 
+
+
+filedate <- sprintf("%04d%02d%02d",year(today()),month(today()),day(today()))
 
 saveRDS(
   dat_trim,
   here::here(
-    "data", "cleaned_atlas_dat_apr_2024.rds"
+    "data", paste0("cleaned_atlas_dat_", filedate, ".rds")
   )
 )
 
 saveRDS(
   dat,
   here::here(
-    "data", "cleaned_all_bridge_dat_apr_2024.rds"
+    "data", paste0("cleaned_all_bridge_dat_", filedate, ".rds")
   )
 )
 
 dim(dat_trim)
 
 ## MISC CHECKS -----------------------------------------------------------------
+
+dat_trim <- readRDS(  here::here(
+  "data", paste0("cleaned_atlas_dat_", filedate, ".rds")
+))
+dat <- readRDS(  here::here(
+    "data", paste0("cleaned_all_bridge_dat_", filedate, ".rds")
+  ))
 
 min_lat <- min(floor(dat_trim$lat) - 0.1)
 max_lat <- max(dat_trim$lat) + 0.1
@@ -358,6 +477,11 @@ bc_coast <- rbind(rnaturalearth::ne_states( "United States of America",
 
 dt_chinook <- dat_trim %>% filter(species == "chinook")
 
+all_coast <- rbind(rnaturalearth::ne_states( "United States of America", 
+                                            returnclass = "sf"), 
+                  rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
+  st_crop(., xmin = -163, ymin = 40, xmax = max_lon+2, ymax = 61) %>%
+  st_transform(., crs = sp::CRS("+proj=longlat +datum=WGS84"))
 
 dat %>%
   group_by(pfma) %>% tally() %>% print(n = 70)
@@ -368,9 +492,8 @@ dat_trim %>%
 # All points (inc outside synoptic) from pfmas with letters
 dat %>% filter(!grepl("[0-9]", pfma)) %>% 
   ggplot() +
-  geom_sf(data = bc_coast) + 
-  geom_point(aes(x = lon, y = lat, colour = pfma)) +
-  facet_wrap(~pfma)
+  geom_sf(data = all_coast) + 
+  geom_point(aes(x = lon, y = lat, colour = pfma)) 
 
 # trimmed data map
 dat_trim %>% filter(species == "chinook") %>%
@@ -379,15 +502,28 @@ dat_trim %>% filter(species == "chinook") %>%
   geom_sf(data = bc_coast) +
   ggsidekick::theme_sleek() +
   ylim(c(min_lat, max_lat)) + 
-  xlim(c(min_lon, max_lon))
-ggsave(here::here("figs", "dataset", "trimmed-data-by-pfma-apr-2024.png"), height = 9, width = 9)
+  xlim(c(min_lon, max_lon)) 
+
+ggsave(here::here("figs", "dataset", "trimmed-data-by-pfma-nov-2024.png"), height = 9, width = 9)
 
 dt_chinook <- dat_trim %>% filter(species == "chinook")
 
+dat_trim %>% filter(species == "chinook") %>%
+  filter(pfma %in% c("13", "14", "15", "16", "17", "18", "19","28", "29"))  %>%
+  ggplot() +
+  geom_point(aes(x = lon, y = lat, colour = pfma)) +
+  geom_sf(data = bc_coast) +
+  ggsidekick::theme_sleek() +
+  ylim(c(48, 51)) + 
+  xlim(c(-127, -122)) +
+  facet_grid(month~year)
+         
 # Only missing data for January
 table(dt_chinook$year, dt_chinook$month)
 table(dt_chinook$month)
 
+
+filter(dat_trim, pfma == "IBC")
 
 table(dat_trim$month) # observations per month 
 table(dat$month)

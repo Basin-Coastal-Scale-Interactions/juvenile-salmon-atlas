@@ -5,13 +5,12 @@ library(cowplot)
 library(sf)
 
 chinook_dat <- readRDS(here::here("data", "chinook_dat_allcoast.rds"))        
-gsi_dat <- readRDS(here::here("data", "chinook_gsi_counts_20240722.rds")) %>%
+gsi_dat <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2025-01-27.rds")) %>%
   mutate(season_n = as.numeric(season_f),
          scale_month_adj = scale(month_adj)[, 1],
          year_adj = ifelse(month > 2, year, year - 1), # adjusting year to represent fish cohorts
          # year_f = as.factor(year),
-         year_adj_f = as.factor(year_adj))
-
+         year_adj_f = as.factor(year_adj)) 
 
 min_lat <- min(floor(c(chinook_dat$lat, gsi_dat$lat)) - 0.25)
 max_lat <- max(c(chinook_dat$lat, gsi_dat$lat)) + 0.25
@@ -24,12 +23,15 @@ coast <- rbind(rnaturalearth::ne_states( "United States of America",
   st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>%
   st_transform(., crs = sp::CRS("+proj=longlat +datum=WGS84"))
 
+#scales::show_col(scales::hue_pal()(3))
+
+# Species wide tows
 set_map <- ggplot() +
   geom_sf(data = coast, color = "black", fill = "gray90", size = 1.25) +
   geom_point(data = chinook_dat,
-             aes(x = lon, y = lat, fill = survey_f), 
+             aes(x = lon, y = lat), fill = "#F8766D", # fill = survey_f (in aes())
              shape = 21, alpha = 0.4) +
-  scale_fill_discrete(name = "Survey", labels=c("HSS", "IPES")) +
+  #scale_fill_discrete(name = "Survey", labels=c("HSS", "IPES")) +
   ggsidekick::theme_sleek() +
   theme(axis.title = element_blank()) +
   scale_x_continuous(expand = c(0, 0)) +
@@ -42,12 +44,13 @@ set_map <- ggplot() +
            xlim = c(min_lon + 0.15, max_lon - 0.15))
 set_map
 
+# Stock-specific tows
 set_map2 <- ggplot() +
   geom_sf(data = coast, color = "black", fill = "gray90", size = 1.25) +
   geom_point(data = gsi_dat,
-             aes(x = lon, y = lat, fill = survey_f), 
+             aes(x = lon, y = lat), fill = "#F8766D", # fill = survey_f (in aes())
              shape = 21, alpha = 0.4) +
-  scale_fill_discrete(name = "Survey", labels=c("HSS", "IPES")) +
+  #scale_fill_discrete(name = "Survey", labels=c("HSS", "IPES")) +
   ggsidekick::theme_sleek() +
   theme(axis.title = element_blank()) +
   scale_x_continuous(expand = c(0, 0)) +
@@ -86,7 +89,7 @@ inset_map <- ggplot() +
 #     height = 4.5, width = 6, 
 #     units = "in", res = 250)
 p2 <- cowplot::ggdraw(set_map2) +
-  cowplot::draw_plot(inset_map, x = 0.097, y = 0.065, #vjust = -0.2,
+  cowplot::draw_plot(inset_map, x = 0.097, y = 0.095, #vjust = -0.2,
                      hjust = 0.1,
                      width = 0.4, height = 0.35)
 
@@ -106,13 +109,13 @@ bubble_temp_coverage <- chinook_dat %>%
   summarize(n_tows = length(unique_event), .groups = "drop") %>% 
   ungroup() %>% 
   ggplot(.) +
-  geom_jitter(aes(y = week, x = year, size = n_tows, 
+  geom_jitter(aes(y = week, x = year, size = n_tows), 
                   #shape = season_f2,
-                  color = survey_f),
+                  color = "#F8766D",
               alpha = 0.3, width = 0.25) +
   ggsidekick::theme_sleek() +
   scale_size_area(name = "Number\nof tows") +
-  scale_color_discrete(name = "Survey", labels = c("HSS", "IPES")) +
+  #scale_color_discrete(name = "Survey", labels = c("HSS", "IPES")) +
   labs(x = "Year", y = "Week") +
   guides(
     fill = guide_legend(
@@ -131,12 +134,12 @@ bubble_combined <- bind_rows(chinook_dat %>%
             mutate(model = "Stock-specifc model")) %>%
   ungroup() %>% 
   ggplot(.) +
-  geom_jitter(aes(y = week, x = year, size = n_tows, 
-                  color = survey_f),
+  geom_jitter(aes(y = week, x = year, size = n_tows), 
+                  color = "#F8766D",
               alpha = 0.3, width = 0.25) +
   ggsidekick::theme_sleek() +
   scale_size_area(name = "Number\nof tows") +
-  scale_color_discrete(name = "Survey", labels = c("HSS", "IPES")) +
+ # scale_color_discrete(name = "Survey", labels = c("HSS", "IPES")) +
   labs(x = "Year", y = "Week") +
   facet_wrap(~model, ncol = 1) +
   guides(
@@ -148,3 +151,72 @@ bubble_combined <- bind_rows(chinook_dat %>%
 ggsave(file = here::here("figs","temp_cov.png"), 
        plot = bubble_combined, 
        width = 7, height = 7, units = "in")
+
+### Figures of spatial tow coverage by month
+
+#### Chinook abundance data
+
+# adding missing month factor levels
+cd2 <- chinook_dat %>%
+  mutate(month_f = ordered(month_f, levels = month(1:12, abbr = TRUE, label = TRUE)))
+
+nodata_text <- data.frame(
+  label = c("No data", rep("", 11)),
+  month_f   = ordered(levels(cd2$month_f))
+)
+
+ch_monthly <- ggplot() +
+  geom_sf(data = coast, color = "black", fill = "gray90", size = 1.25) +
+  geom_point(data = cd2,
+             aes(x = lon, y = lat), fill = "#F8766D", 
+             shape = 21, alpha = 0.4) +
+  #scale_fill_discrete(name = "Survey", labels=c("HSS", "IPES")) +
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank()) +
+  scale_x_continuous(expand = c(0, 0), labels = c("136°W", "","132°W", "","128°W", "","124°W") ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme(#legend.position = "outside", #legend.position.inside = c(0.9, 0.8),
+        legend.title = element_text(size=15),
+        legend.text = element_text(size=13)) +
+  # hacky way to ensure borders are correct
+  coord_sf(ylim = c(min_lat + 0.15, max_lat - 0.15), 
+           xlim = c(min_lon + 0.15, max_lon - 0.15)) +
+  facet_wrap(~month_f, nrow = 3, drop = FALSE)   +
+  geom_text(data = nodata_text, mapping = aes(x = -130, y = 48, label = label), size = 6)
+
+ggsave(here::here("figs", "chinook_data_by_month.png"), 
+       ch_monthly, width = 10, height = 8, units = "in")
+
+#### GSI data
+
+# adding missing month factor levels
+gd2 <- gsi_dat %>%
+  mutate(month_f = ordered(month_f, levels = month(1:12, abbr = TRUE, label = TRUE)))
+
+nodatagsi_text <- data.frame(
+  label = c("No data", "", "", "No data", "No data", rep("", 7)),
+  month_f   = ordered(levels(cd2$month_f))
+)
+
+gsi_monthly <- ggplot() +
+  geom_sf(data = coast, color = "black", fill = "gray90", size = 1.25) +
+  geom_point(data = gd2,
+             aes(x = lon, y = lat), fill = "#F8766D", 
+             shape = 21, alpha = 0.4) +
+ # scale_fill_discrete(name = "Survey", labels=c("HSS", "IPES")) +
+  ggsidekick::theme_sleek() +
+  theme(axis.title = element_blank()) +
+  scale_x_continuous(expand = c(0, 0), labels = c("136°W", "","132°W", "","128°W", "","124°W") ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme(#legend.position = "outside", #legend.position.inside = c(0.9, 0.8),
+    legend.title = element_text(size=15),
+    legend.text = element_text(size=13)) +
+  # hacky way to ensure borders are correct
+  coord_sf(ylim = c(min_lat + 0.15, max_lat - 0.15), 
+           xlim = c(min_lon + 0.15, max_lon - 0.15)) +
+  facet_wrap(~month_f, nrow = 3, drop = FALSE)   +
+  geom_text(data = nodatagsi_text, mapping = aes(x = -130, y = 48, label = label), size = 6)
+
+
+ggsave(here::here("figs", "gsi_data_by_month.png"), 
+       gsi_monthly, width = 10, height = 8, units = "in")

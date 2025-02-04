@@ -6,35 +6,47 @@ library(ggplot2)
 library(ggsidekick)
 library(sdmTMB)
 library(here)
-library(sdmTMBextra)
+#library(sdmTMBextra)
 
 source(here("R", "plot_map.R"))
 mdmesh <- readRDS(here("data", "fits", "dmesh_allcoast.rds")) 
 
 # mout3 <- readRDS(here("data", "fits", "mout3_allcoast.rds")) 
 # dat_tbl_mout3 <- readRDS(here("data", "fits", "all_mout3_allcoast.rds"))
-#dat_tbl_dmesh <- readRDS(here("data", "fits", "all_dmesh_allcoast.rds"))
+dat_tbl_dmesh <- readRDS(here("data", "fits", "all_dmesh_allcoast.rds"))
+
+# function for quickly applyingscale()
+scale_est <- function (x, unscaled_vec) {
+  sc <- scale(unscaled_vec)
+  sc_center <- attr(sc, "scaled:center")
+  sc_scale <- attr(sc, "scaled:scale")
+  (x - sc_center) / sc_scale
+}
 
 index_grid <- readRDS(here("data", "pred_grid_all_coast.rds")) %>%
-  mutate(year = 2019L, 
+  mutate(year = 2017, 
          year_f = as.factor(year),
+         year_adj_f = year_f,
          survey_f = as.factor("hss"),
          target_depth = 0,
          day_night = "DAY",
-         scale_depth = -0.5427145)
+         scale_depth = -0.5427145,
+  )
 
-index_grid_jun <- mutate(index_grid, month = 6,
-                         month_f = month(month, label = TRUE),
-                         month_adj = ifelse(month > 2, month - 2, month + 10)) # adjusting to start in March)
+# index_grid_jun <- mutate(index_grid, month = 6,
+#                          month_f = month(month, label = TRUE),
+#                          month_adj = ifelse(month > 3, month - 3, month + 9)) # adjusting to start in March)
 
-glimpse(index_grid_jun)
-table(index_grid_jun$year)
+# glimpse(index_grid_jun)
+# table(index_grid_jun$year)
 
 grid_months <- index_grid %>%
   replicate_df(., "month", 1:12) %>%
   mutate(month = as.numeric(month), 
          month_f = month(month, label = TRUE),
-         month_adj = ifelse(month > 2, month - 2, month + 10), # adjusting to start in March
+         month_adj = ifelse(month > 3, month - 3, month + 9), # adjusting to start in March
+         scale_month_adj = scale_est(month_adj, dat_tbl_dmesh$data[[1]]$month_adj), 
+         # adding scaled month based on data
   NULL)
 
 dim(grid_months)
@@ -52,7 +64,7 @@ dim(grid_months)
 #   mutate(year_f = as.factor(year), month_f = month(month, label = TRUE))
 
 dim(index_grid)
-dim(index_grid_jun)
+#dim(index_grid_jun)
 dim(grid_months)
 #dim(grid_months_years)
 
@@ -79,12 +91,24 @@ dim(grid_months)
 #   ggtitle("Predicted juvenile chinook distribution in June (dense mesh)")
 # dev.off()
 
+
+fit <- dat_tbl_dmesh$fit[[1]]
+summary(fit)
+glimpse(grid_months)
+
+predict(fit, newdata = grid_months[1:100,],
+       offset = rep.int(median(fit$offset), nrow(grid_months[1:100,])), 
+        re_form_iid = NA)
+
 # Monthly predictions for all species
-all_pred_months <- purrr::map(
-  dat_tbl_dmesh$fit,
-  ~ predict(.x, newdata = grid_months, 
-            offset = rep.int(-6.287114, nrow(grid_months)), re_form_iid = NA) 
+all_pred_months <- map(
+  dat_tbl_dmesh$fit, function (x) {
+  predict(x, newdata = grid_months, 
+            offset = rep.int(median(x$offset), nrow(grid_months)), re_form_iid = NA)
+  }
 )
+
+
 
 # saving to df ############# and adding adjusted month factor levels so maps start from May (except chum)
 dat_tbl_dmesh$pred_grid <- all_pred_months
@@ -123,42 +147,32 @@ for (i in 1:nrow(dat_tbl_dmesh)) {
   print("Done!")
 }
 
-
 ############
 
-sims_list <- furrr::future_map(
-  dat_tbl_dmesh$fit, function (x) {
-    object <- x
-    samp <- sample_mle_mcmc(object, mcmc_iter = 22L, mcmc_warmup = 20L, mcmc_chains = 5L,
-                            stan_args = list(thin = 5L, cores = 5L))
-    obj <- object$tmb_obj
-    random <- unique(names(obj$env$par[obj$env$random]))
-    pl <- as.list(object$sd_report, "Estimate")
-    fixed <- !(names(pl) %in% random)
-    map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
-    obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
-    obj_mle <- object
-    obj_mle$tmb_obj <- obj
-    obj_mle$tmb_map <- map
-    simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
-  }
-)
-
-saveRDS(sims_list,
-        here::here("data", "fits", "nb_mcmc_draws_mout3.rds"))
-}
-
-
-
-sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_mout3.rds"))
-
-
-
-
-
-all_fit_tbl$sims <- sims_list
-
-
+# sims_list <- furrr::future_map(
+#   dat_tbl_dmesh$fit, function (x) {
+#     object <- x
+#     samp <- sample_mle_mcmc(object, mcmc_iter = 22L, mcmc_warmup = 20L, mcmc_chains = 5L,
+#                             stan_args = list(thin = 5L, cores = 5L))
+#     obj <- object$tmb_obj
+#     random <- unique(names(obj$env$par[obj$env$random]))
+#     pl <- as.list(object$sd_report, "Estimate")
+#     fixed <- !(names(pl) %in% random)
+#     map <- lapply(pl[fixed], function(x) factor(rep(NA, length(x))))
+#     obj <- TMB::MakeADFun(obj$env$data, pl, map = map, DLL = "sdmTMB")
+#     obj_mle <- object
+#     obj_mle$tmb_obj <- obj
+#     obj_mle$tmb_map <- map
+#     simulate(obj_mle, mcmc_samples = sdmTMBextra::extract_mcmc(samp), nsim = 200L)
+#   }
+# )
+# 
+# saveRDS(sims_list,
+#         here::here("data", "fits", "nb_mcmc_draws_mout3.rds"))
+# 
+# sims_list <- readRDS(here::here("data", "fits", "nb_mcmc_draws_mout3.rds"))
+# 
+# all_fit_tbl$sims <- sims_list
 
 ### Plot distribution of sims vs observed:
 
@@ -182,22 +196,7 @@ for (i in 1:nrow(dat_tbl_mout3)) {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 ######
-
-
 
 dharma_res <- DHARMa::createDHARMa(
   simulatedResponse = dat_tbl_mout3$sims[[1]][1:(nrow(dat_tbl_mout3$sims[[1]])-2),],

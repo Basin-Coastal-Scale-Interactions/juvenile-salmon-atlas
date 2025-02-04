@@ -1,9 +1,10 @@
 library(sdmTMB)
 library(here)
+library(tidyverse)
 
 # loading sdmTMB model fits
 m_chinook <- readRDS(here::here("data", "fits", "fits_list_mdmesh.rds"))$chinook
-m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
+m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB_2024-12-13.rds"))
 
 s_ch <- simulate(m_chinook, nsim = 200, type = "mle-mvn")
 dr_ch <- dharma_residuals(s_ch, m_chinook, return_DHARMa = TRUE)
@@ -26,4 +27,3 @@ png(here::here("figs", "dharma-stock-specific.png"), width = 10, height = 5,
     res= 300, units = "in")
 plot(dr_svc, title = "DHARMA residuals for stock-specific model")
 dev.off()
-
