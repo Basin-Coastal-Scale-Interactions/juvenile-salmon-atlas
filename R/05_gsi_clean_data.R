@@ -52,10 +52,10 @@ glimpse(bridge)
 # grep("2023", perl = TRUE, gsi_all_mu_in$unique_fish) %>%
 #   gsi_all_mu_in[., ]
 # 
-# # All percentages for all fish at stock level
-# gsi_all_stock_in <- read_xlsx(here("data-raw", "CHINOOK_fish_all_gsi_20250122.xlsx"), sheet = "all_stock") %>%
-#   janitor::clean_names()
-# glimpse(gsi_all_stock_in)
+# All percentages for all fish at stock level
+gsi_all_stock_in <- read_xlsx(here("data-raw", "CHINOOK_fish_all_gsi_20250122.xlsx"), sheet = "all_stock") %>%
+  janitor::clean_names()
+glimpse(gsi_all_stock_in)
 
 # Key for unique_event
 event_key <- read_xlsx(here("data-raw", "CHINOOK_fish_all_gsi_20250122.xlsx"), sheet = "fish_catch_event") %>%
@@ -270,7 +270,7 @@ chinook_gsi_counts <- inner_join(gsi_all_stock_grouped, bridge, by = "unique_eve
     utm_x_1000 = utm_x / 1000,
     utm_y_1000 = utm_y / 1000,
     effort = log(volume_km3),
-    scale_dist = scale(as.numeric(dist_to_coast_km))[ , 1],
+   # scale_dist = scale(as.numeric(dist_to_coast_km))[ , 1],
     scale_depth = scale(as.numeric(target_depth))[ , 1],
     year_season_f = paste(year_f, season_f, sep = "_") %>% as.factor(),
     day_night = as.factor(day_night))
@@ -280,9 +280,9 @@ glimpse(chinook_gsi_counts)
 table(chinook_gsi_counts$region)
 
 saveRDS(chinook_gsi_counts, 
-        file = here("data", paste0("chinook_gsi_counts_",ymd(Sys.Date()),".rds")))
+        file = here("data", "chinook_gsi_counts.rds"))
 
-filter(chinook_gsi_counts, year %in% 2022:2023)
+filter(chinook_gsi_counts, year %in% 2022:2024)
 
 ##########################
 

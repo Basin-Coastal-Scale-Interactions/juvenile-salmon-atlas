@@ -11,7 +11,7 @@ source("R/cleave_by.R")
 #  Load GSI data ------------------------------------------------------------
 
 # 0725 includes all fish, 0830 doesn't include fish with max stock_prop <0.5
-dat <- readRDS(here::here("data", "chinook_gsi_counts_2025-01-27.rds")) %>% 
+dat <- readRDS(here::here("data", "chinook_gsi_counts.rds")) %>% 
   select(-month_adj) %>%
   mutate(month_adj = ifelse(month > 3, month - 3, month + 9), # redo month_adj to start in April
          season_n = as.numeric(season_f),

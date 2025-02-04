@@ -24,14 +24,14 @@ south_coast <- rbind(rnaturalearth::ne_states( "United States of America",
 all_coast <- rbind(rnaturalearth::ne_states( "United States of America", 
                                                returnclass = "sf"), 
                      rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., xmin = -135, ymin = 46.25, xmax = -122.25, ymax = 55.5) %>% 
+  sf::st_crop(., xmin = -138, ymin = 46.25, xmax = -119, ymax = 60) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=m"))
 
 # Need coast polygon in km for some graphs
 all_coast_km <- rbind(rnaturalearth::ne_states( "United States of America", 
                                                 returnclass = "sf"), 
                       rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
-  sf::st_crop(., xmin = -135, ymin = 46.25, xmax = -122.25, ymax = 55.5) %>% 
+  sf::st_crop(., xmin = -138, ymin = 46.25, xmax = -119, ymax = 60) %>% 
   sf::st_transform(., crs = sp::CRS("+proj=utm +zone=9 +units=km"))
 
 # inlet specific
