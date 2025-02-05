@@ -70,6 +70,9 @@ filter(tow_data, is.na(net_desc))
 
 
 # Fixing net values here
+# jackie.king 7 November, 1:06 pm
+# "The Ocean Selector is a groundfish boat, so we would not have used a bottom 
+# trawl net.  I would expect the CanTrawl 250 to have been loaded."
 td <- tow_data %>%
   mutate(net_desc = case_when(
     year >= 2021 & is.na(net_desc) ~ "LFS 7742",
