@@ -42,42 +42,49 @@ scale_est <- function (x, unscaled_vec) {
   (x - sc_center) / sc_scale
 }
 
-# grid for predicting 
-grid_months <- prop_grid %>%
-  select(-FID, -elevation_meter, -dist_to_coast_km, -slope_degree, -coast_distance_meter, -depth, -label) %>%
-  replicate_df(., "month", c(5:12)) %>%
-  mutate(month = as.numeric(month), 
-         #yday = 160,
-         utm_x_1000 = X/1000,
-         utm_y_1000 = Y/1000,
-         survey_f = as.factor("hss"),
-         day_night = as.factor("DAY"),
-         scale_depth = -0.5427145, # Change to 0m based on data
-         year_adj_f = as.factor(2019),
-         month_f = month(month, label = TRUE),
-         month_adj = ifelse(month > 3, month - 3, month + 9), # adjusting to start in April
-         scale_month_adj = scale_est(month_adj, chinook_dat$month_adj),
-         NULL) #%>%
-  #filter(!month_adj %in% c(11)) #
-
-glimpse(grid_months)
-
-pred_sp <- predict(dat_tbl_dmesh$fit$chinook, newdata = grid_months,
-                   se_fit = FALSE, re_form_iid = NA,
-                offset = rep.int(median(chinook_dat$effort), nrow(grid_months)))
-
-pred_sp$pred_i <- pred_sp$est %>% dat_tbl_dmesh$fit$chinook$family$linkinv() #pred_linkinv
-
-glimpse(pred_sp)
-glimpse(pred_stock)
+# # grid for predicting 
+# grid_months <- prop_grid %>%
+#   select(-FID, -elevation_meter, -dist_to_coast_km, -slope_degree, -coast_distance_meter, -depth, -label) %>%
+#   replicate_df(., "month", c(5:12)) %>%
+#   mutate(month = as.numeric(month), 
+#          #yday = 160,
+#          utm_x_1000 = X/1000,
+#          utm_y_1000 = Y/1000,
+#          survey_f = as.factor("hss"),
+#          day_night = as.factor("DAY"),
+#          scale_depth = -0.5427145, # Change to 0m based on data
+#          year_adj_f = as.factor(2019),
+#          month_f = month(month, label = TRUE),
+#          month_adj = ifelse(month > 3, month - 3, month + 9), # adjusting to start in April
+#          scale_month_adj = scale_est(month_adj, chinook_dat$month_adj),
+#          NULL) #%>%
+#   #filter(!month_adj %in% c(11)) #
+# 
+# glimpse(grid_months)
+# 
+# pred_sp <- predict(dat_tbl_dmesh$fit$chinook, newdata = grid_months,
+#                    se_fit = FALSE, re_form_iid = NA,
+#                 offset = rep.int(median(chinook_dat$effort), nrow(grid_months)))
+# 
+# pred_sp$pred_i <- pred_sp$est %>% dat_tbl_dmesh$fit$chinook$family$linkinv() #pred_linkinv
+# 
+# glimpse(pred_sp)
+# glimpse(pred_stock)
 
 # adding cv cutoffs to species-wide model
-pred_chinook <- left_join(pred_sp, select(pred_chinook_cutoff, 
-                                          lon, lat, month_adj, Xr, Xr, pred, 
-                                          cvs, sp_cutoff_keep = cutoff_keep),
-                          by = c("lon", "lat", "month_adj"))
+pred_chinook <- rename(pred_chinook_cutoff, sp_cutoff_keep = cutoff_keep)
 
-mutate(pred_chinook, diff = pred_i - pred) %>% pull(diff) %>% range()
+# pred_chinook <- left_join(pred_sp, select(pred_chinook_cutoff, 
+#                                           lon, lat, month_adj, Xr, Xr, pred, 
+#                                           cvs, sp_cutoff_keep = cutoff_keep),
+#                           by = c("lon", "lat", "month_adj"))
+
+#mutate(pred_chinook, diff = pred_i - pred) %>% pull(diff) %>% range()
+
+# plot(pred_i ~ pred, pred_chinook)
+# ggplot(pred_chinook) +
+#   geom_point(aes(pred, pred_i))
+#lm(pred_i ~ pred, pred_chinook) %>% summary()
 
 pred_stock_sub <- pred_stock %>%
   select(utm_x_1000, utm_y_1000, lon, lat, region, month, month_adj, prob_i) %>%
@@ -86,11 +93,11 @@ pred_stock_sub <- pred_stock %>%
             by = c("lon", "lat", "month_adj", "region"))
 
 pred_sp_sub <- pred_chinook %>%
-  select(utm_x_1000, utm_y_1000, month, pred_i, sp_cutoff_keep)
+  select(utm_x_1000, utm_y_1000, month, pred, sp_cutoff_keep)
 
 pred_cmb <- left_join(pred_stock_sub, pred_sp_sub, by = c("utm_x_1000", "utm_y_1000", "month")) %>%
   arrange(region, month, utm_x_1000, utm_y_1000) %>%
-  mutate(pred_cmb = pred_i * prob_i)
+  mutate(pred_cmb = pred * prob_i)
 
 # pred_cmb_rot <- bind_cols(pred_cmb, 
 #                           gfplot:::rotate_coords(pred_cmb$utm_x_1000, pred_cmb$utm_y_1000, 45, 
@@ -153,13 +160,14 @@ p <- pred_cmb %>%
   ggtitle("Juvenile chinoook stock distribution")
 
 p
-
-ggsave(p, filename = here::here("figs", "chinook_abundance_by_stock_sdmTMB_cmb_svc_mapped_tauZ_sdmTMB.png"), 
+ggsave(p, filename = here::here("figs", "chinook_abundance_by_stock_sdmTMB_WCVI_Jun.png"), 
        width = 14, height = 12)
 
 
 ##############
 # Wrangling data frame one last time for plotting
+
+saveRDS(pred_cmb, file = here("data", "pred_cmb.rds"))
 
 pred_cmb_cut <- filter(pred_cmb, stock_cutoff_keep == TRUE & sp_cutoff_keep == TRUE)
 
@@ -178,42 +186,45 @@ grid_df <- pred_cmb_cut %>%
 
 saveRDS(grid_df, here("data", "grid_df.rds"))
 
-rm(pred_cmb)
-rm(pred_cmb_cut)
-rm(pred_stock_cutoff)
-rm(pred_stock)
+#### 
+grid_df <- readRDS(here("data", "grid_df.rds"))
+
+# rm(pred_cmb)
+# rm(pred_cmb_cut)
+# rm(pred_stock_cutoff)
+# rm(pred_stock)
 
 #prot <- pred_cmb_sub_sq_rot %>%
-prot <- grid_df %>%
-  ggplot(data = .) +
-  #geom_point(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb), shape = 15) + # this hack works but is slower to render 
-  geom_tile(aes(x = Xr, y = Yr, fill = pred_cmb), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
-  #geom_polygon(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb)) +
-  scale_fill_viridis_c(name = "Predicted\nnumber of\njuvenile\nchinook\nper tow",
-                       labels = scales::comma,#) +#,
-                       trans = ggsidekick::fourth_root_power_trans()) +
-  scale_color_viridis_c(name = "Predicted\ndistribution\nof juvenile\nchinook by\nstock",
-                       labels = scales::comma,#) +#,
-                       trans = ggsidekick::fourth_root_power_trans()) +
-  ggsidekick::theme_sleek() +
-  coord_fixed() +
-  theme(legend.key.height = unit(0.8, "cm"),
-        axis.text.x=element_blank(),
-        axis.text.y=element_blank()) +
-  geom_sf(data = rotated_coast, color = "gray80", fill = "gray90") +
-  annotate("text", x = 616000, y = 5290000, color = "red", size = 11, label = "?") +
-  scale_x_continuous(name = NULL, limits = range(grid_df$Xr)+c(-1000,1000), expand = c(0, 0)) +
-  scale_y_continuous(name = NULL, limits = range(grid_df$Yr)+c(-1000,1000), expand = c(0, 0)) +
-  facet_grid(salmon_region ~ month_f)  +
-  ggtitle("Juvenile chinoook stock distribution")
-
-prot
-
-ggsave(prot, 
-       filename = here::here("figs", 
-                             paste0("chinook_abundance_by_stock_sdmTMB_cmb_svc_mapped_tauZ_rotated_no05_",
-                                    ymd(Sys.Date()),".png")), 
-       width = 14, height = 30)
+# prot <- grid_df %>%
+#   ggplot(data = .) +
+#   #geom_point(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb), shape = 15) + # this hack works but is slower to render 
+#   geom_tile(aes(x = Xr, y = Yr, fill = pred_cmb), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
+#   #geom_polygon(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb)) +
+#   scale_fill_viridis_c(name = "Predicted\nnumber of\njuvenile\nchinook\nper tow",
+#                        labels = scales::comma,#) +#,
+#                        trans = ggsidekick::fourth_root_power_trans()) +
+#   scale_color_viridis_c(name = "Predicted\ndistribution\nof juvenile\nchinook by\nstock",
+#                        labels = scales::comma,#) +#,
+#                        trans = ggsidekick::fourth_root_power_trans()) +
+#   ggsidekick::theme_sleek() +
+#   coord_fixed() +
+#   theme(legend.key.height = unit(0.8, "cm"),
+#         axis.text.x=element_blank(),
+#         axis.text.y=element_blank()) +
+#   geom_sf(data = rotated_coast, color = "gray80", fill = "gray90") +
+#   annotate("text", x = 616000, y = 5290000, color = "red", size = 11, label = "?") +
+#   scale_x_continuous(name = NULL, limits = range(grid_df$Xr)+c(-1000,1000), expand = c(0, 0)) +
+#   scale_y_continuous(name = NULL, limits = range(grid_df$Yr)+c(-1000,1000), expand = c(0, 0)) +
+#   facet_grid(salmon_region ~ month_f)  +
+#   ggtitle("Juvenile chinoook stock distribution")
+# 
+# prot
+# 
+# ggsave(prot, 
+#        filename = here::here("figs", 
+#                              paste0("chinook_abundance_by_stock_sdmTMB_cmb_svc_mapped_tauZ_rotated_no05_",
+#                                     ymd(Sys.Date()),".png")), 
+#        width = 14, height = 30)
 
 # Dividing plot into 2 for better viewing
 
@@ -242,8 +253,6 @@ prot_1 <- grid_df %>%
   #ggtitle("Juvenile chinoook stock distribution") +
   NULL
 
-prot_1
-
 prot_2 <- grid_df %>%
   filter(!salmon_region %in% c("Northern BC/AK", "Central BC", "Salish Coastal", "WA/OR Coastal", "WCVI")) %>%
   ggplot(data = .) +
@@ -270,20 +279,13 @@ prot_2 <- grid_df %>%
   # ggtitle("Juvenile chinoook stock distribution") +
   NULL
 
-# prot_2
-# 
-# 
-# plot_grid(prot_1, prot_2)
-# 
-# ggsave(plot_grid(prot_1, prot_2), 
-#        filename = here::here("figs", paste0("chinook_abundance_by_stock_sdmTMB_cmb_svc_mapped_tauZ_rotated_no05",
-#                              ymd(Sys.Date()),".png")), 
-#        width = 20, height = 16)
+gc()
 
-# png(here::here("figs", "chinook_abundance_by_stock_sdmTMB_cmb_svc_mapped_tauZ_sdmTMB_rotated_png.png"), 
-#           width = 9, height = 10, units = "in", res = 300)
-# prot
-# dev.off()
+# This produces a nice output using the patchwork pkg
+ggsave(prot_1 + prot_2,
+       filename = here::here("figs", "chinook_abundance_by_stock_sdmTMB_rotated_pw_no05.png"),  
+       width = 15, height = 11)
+
 
 ### Relative abundance plots
 
@@ -367,14 +369,9 @@ prel_2 <- grid_rel %>%
 
 # This produces a nice output using the patchwork pkg
 ggsave(prel_1 + prel_2,
-       filename = here::here("figs", paste0("chinook_relative_abundance_by_stock_rotated_pw_no05_",
-                             ymd(Sys.Date()),".png")), 
+       filename = here("figs", "chinook_relative_abundance_by_stock_rotated_pw_no05.png"), 
        width = 15, height = 11)
 
-ggsave(prot_1 + prot_2,
-       filename = here::here("figs", paste0("chinook_abundance_by_stock_sdmTMB_rotated_pw_no05_",
-                             ymd(Sys.Date()),".png")),  
-       width = 15, height = 11)
 
 #prot <- pred_cmb_sub_sq_rot %>%
 #prot <- 

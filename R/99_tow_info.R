@@ -1,18 +1,11 @@
-# Wrangle tow inf
-
+# Wrangle table of yearly tows counts by ship and net
 
 library(tidyverse)
 library(readxl)
 library(janitor)
 library(here)
 
-
-# CHANGE TO LOCAL DB PULL
-# tow_info <- read_excel(here("data-raw", "Seb_Trawl_Specs_202.xlsx"), 
-#                        sheet = "Sheet1") %>%
-#   clean_names() 
-
-# CHANGE TO LOCAL DB PULL
+# All tows
 tow_info <- read_csv(here("data-raw", "BCSI_TowInfo_20250121.csv")) %>%
   clean_names() 
 
@@ -76,7 +69,7 @@ filter(tow_data, is.na(net_desc))
 td <- tow_data %>%
   mutate(net_desc = case_when(
     year >= 2021 & is.na(net_desc) ~ "LFS 7742",
-    net_desc == "Ocean Selectors net" ~ "CanTrawl 250",
+    net_desc == "Ocean Selectors net" ~ "Ocean Selector's net",
     net_desc == "Rusty's backup net" ~ "CanTrawl 250",
     .default = net_desc
   )) %>%
@@ -95,20 +88,20 @@ library(kableExtra)
 options(knitr.kable.NA = '')
 
 tow_kb <- kable(tdw, format = "latex", align = "llccccccc",
-                             caption = "Yearly vessel and net type for all tows used in this study.") %>%
-  kable_styling(font_size = 6)
+                  caption = "Yearly vessel and net type for all tows used in this 
+                study. Note that CanTrawl 400/580 and LFS 1142 are much larger nets than 
+                CanTrawl 250 and LFS 7742, with these latter two being comparable in size.") %>%
+  kable_styling(font_size = 6) %>%
+  kable_styling(latex_options = "hold_position")
 
 
 writeLines(tow_kb, here("tables","tows.tex"))
 
-
-gsotow_kb <- kable(tdw, format = "latex", align = "llccccccc",
-                caption = "Yearly vessel and net type  for all tows each year") %>%
-  kable_styling(font_size = 6)
-
+# gsotow_kb <- kable(tdw, format = "latex", align = "llccccccc",
+#                 caption = "Yearly vessel and net type  for all tows each year") %>%
+#   kable_styling(font_size = 6)
 
 print(tdw, n = 44)
-writeLines(tow_kb, here("tables","tows.tex"))
 
 tow_data %>%
   filter(is.na(vessel))
@@ -117,8 +110,8 @@ tow_data %>%
   mutate(date = lubridate::as_date(date)) %>%
   arrange(desc(date))
 
-gsitow_data %>%
-  mutate(date = lubridate::as_date(date)) %>% 
-  select(date, everything()) %>%
-  arrange(desc(date))
+# gsitow_data %>%
+#   mutate(date = lubridate::as_date(date)) %>% 
+#   select(date, everything()) %>%
+#   arrange(desc(date))
 

@@ -35,4 +35,5 @@ data/gsi-prop-grid.rds
 data/gsi-prop-mesh.rds
 data/pred_chinook_cutoff.rds
 data/pred_grid_all_coast.rds
+data/pred_cmb.rds
 ToDo.md

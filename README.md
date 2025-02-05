@@ -6,7 +6,7 @@ This repository contains all required files to fit spatiotemporal models
 of seasonal abundance for chinook, chum, coho, pink and sockeye
 (`R/01_fitting_species_wide_models.R`), and the 
 stock composition spatiotemporal model using GSI samples for chinook 
-(`R/06_fitting_stock_comp_model_sdmRMB.R`).
+(`R/06_fitting_stock_comp_sdmRMB.R`).
 
 Analysis files are in the `R/` folder and are numbered in the order they 
 should be run.

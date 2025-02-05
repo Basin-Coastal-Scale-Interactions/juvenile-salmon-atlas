@@ -27,7 +27,7 @@ coast <- sf::st_crop(
   c(xmin = -135, ymin = 46, xmax = -120, ymax = 58.5)
 )
 plot(st_geometry(coast))
- <- sf::st_transform(coast, crs = 32609)
+coast_proj <- sf::st_transform(coast, crs = 32609)
 # make them in the right format
 coast_proj4 <- st_cast(coast_proj, "POLYGON")
 
