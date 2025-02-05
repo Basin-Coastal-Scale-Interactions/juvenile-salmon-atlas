@@ -18,6 +18,7 @@ tow_info <- read_csv(here("data-raw", "BCSI_TowInfo_20250121.csv")) %>%
 
 tow_info$date %>% range()
 
+# No day_night
 filter(tow_info, unique_event == "IPES2024-026-126") %>% glimpse
 
 
@@ -43,7 +44,7 @@ tow_info$vessel <- forcats::fct_recode(
 saveRDS(tow_info, file = here("data", "tow_info.rds"))
       
 dat <- readRDS(here::here("data", "chinook_dat_allcoast.rds"))
-gsidat <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2025-01-27.rds"))
+gsidat <- readRDS(here::here("data", "chinook_gsi_counts_fitted.rds"))
 dat$year %>% range()
 gsidat$year %>% range()
 
@@ -64,33 +65,24 @@ t_info <- select(tow_info,
 tow_data <- left_join(dat, t_info, by = "unique_event")
 gsitow_data <- left_join(gsidat, t_info, by = "unique_event")
 
-# renaming single NA and also typo (1142 instead of 7742)
-td <- tow_data %>%
-  mutate(net_desc = if_else(is.na(net_desc), "LFS 7742", net_desc)) %>%
-  mutate(net_desc = fct_recode(net_desc,
-    "LFS 7742" = "LFS 1142"
-    #"LFS 7742" = `NA`
-  )) %>%
-  group_by(year, vessel, net_desc) %>%
-  summarise(n = n()) %>%
-  arrange(year) 
-
 # Checking tows with NAs in net_desc
 filter(tow_data, is.na(net_desc))
 
- 
 
-print(td, n = 50)
-
-tdw <- pivot_wider(td, names_from = net_desc, values_from = n) %>% print(n = 50)
-
+# Fixing net values here
 td <- tow_data %>%
+  mutate(net_desc = case_when(
+    year >= 2021 & is.na(net_desc) ~ "LFS 7742",
+    net_desc == "Ocean Selectors net" ~ "CanTrawl 250",
+    net_desc == "Rusty's backup net" ~ "CanTrawl 250",
+    .default = net_desc
+  )) %>%
   group_by(year, vessel, net_desc) %>%
   summarise(n = n()) %>%
   arrange(year)
 
 
-print(td, n = 45)
+print(td, n = 48)
 
 tdw <- pivot_wider(td, names_from = net_desc, values_from = n) %>% print(n = 50)
 
@@ -100,7 +92,7 @@ library(kableExtra)
 options(knitr.kable.NA = '')
 
 tow_kb <- kable(tdw, format = "latex", align = "llccccccc",
-                             caption = "Yearly vessel and net type  for all tows each year") %>%
+                             caption = "Yearly vessel and net type for all tows used in this study.") %>%
   kable_styling(font_size = 6)
 
 
@@ -112,6 +104,7 @@ gsotow_kb <- kable(tdw, format = "latex", align = "llccccccc",
   kable_styling(font_size = 6)
 
 
+print(tdw, n = 44)
 writeLines(tow_kb, here("tables","tows.tex"))
 
 tow_data %>%
