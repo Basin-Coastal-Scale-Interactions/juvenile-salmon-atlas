@@ -26,7 +26,6 @@ data/dense_mesh*
 data/chinook_dat_allcoast.rds
 data/chinook_gsi_counts_fitted*
 data/cleaned_all_bridge_catch_dat.rds
-data/cleaned_atlas_catch_dat.rds
 data/grid_df.rds
 data/pred_grid_stock_prop_RTMB*
 data/pred_list_stock_comp_sdmTMB*
