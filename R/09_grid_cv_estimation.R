@@ -5,41 +5,48 @@
 
 library(tidyverse)
 library(sdmTMB)
-library(sdmTMBextra)
+#library(sdmTMBextra)
 library(here)
 library(patchwork)
+library(sf)
 
-rotated_coast <- readRDS(here::here("data", "rotated_coast_outline.rds"))
-
-
-#-----------------------------------------------------------------------------
-#' tidy version of the base `split()` function
-#'
-#' @param df data.frame to split
-#' @param ... unquoted column names from the 'df' data.frame to specify 
-#'            the splitting groups
-#'
-#' @return list of data.frames, one for each group
-#-----------------------------------------------------------------------------
-cleave_by <- function(df, ...) {
-  stopifnot(inherits(df, "data.frame"))
-  
-  # use tidyeval to get the names ready for dplyr
-  grouping <- quos(...)
-  
-  # Calculate a single number to represent each group
-  group_index <- df %>%
-    group_by(!!!grouping) %>%
-    group_indices()
-  
-  # do the split by this single group_index variable and return it
-  split(df, group_index)
-}
+source("R/cleave_by.R")
+source("R/99_rotation_functions.R")
 
 prop_grid <- readRDS(here("data", "gsi-prop-grid.rds"))
-m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB_2025-01-27.rds"))
-dat_trim <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2025-01-27.rds"))
+pred_grid <- readRDS(here("data", "pred_grid_all_coast.rds"))
+m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
+dat_trim <- readRDS(here::here("data", "chinook_gsi_counts_fitted.rds"))
 m_chinook <- readRDS(here("data", "fits", "fits_list_mdmesh.rds"))$chinook
+
+###  rotating coastline 
+sf::sf_use_s2(FALSE)
+map_data <- rnaturalearth::ne_countries(scale = "large", returnclass = "sf")
+coast <- sf::st_crop(
+  map_data,
+  c(xmin = -135, ymin = 46, xmax = -120, ymax = 58.5)
+)
+plot(st_geometry(coast))
+ <- sf::st_transform(coast, crs = 32609)
+# make them in the right format
+coast_proj4 <- st_cast(coast_proj, "POLYGON")
+
+rotated_coast <- list()
+rotation_angle <- 45
+rotation_centre <- c(sum(range(pred_grid$utm_x_1000))/2, sum(range(pred_grid$utm_y_1000))/2)
+
+for (i in seq_len(dim(coast_proj4)[1])) {
+  rotated_coast[[i]] <- splitrotatepolygon(
+    coast_proj4,
+    rotation_angle,
+    rotation_centre[1] * 1000,
+    rotation_centre[2] * 1000
+  )
+}
+
+rotated_coast <- do.call(rbind, rotated_coast)
+
+saveRDS(rotated_coast, here::here("data", "rotated_coast_outline.rds"))
 
 # functions for quickly applying and unapplying scale()
 scale_est <- function (x, unscaled_vec) {
@@ -52,7 +59,7 @@ scale_est <- function (x, unscaled_vec) {
 grid_months_chinook <- prop_grid %>%
   select(-FID, -elevation_meter, -slope_degree, -label, -coast_distance_meter, -depth, - dist_to_coast_km) %>% # removing unused columns to reduce size
   # replicate_df(., "region", levels(dat_trim$region)) %>% # c("WCVI", "North/Central BC", "Columbia")) %>%
-  replicate_df(., "month", c(4:12)) %>%
+  replicate_df(., "month", c(5:12)) %>%
   mutate(month = as.numeric(month), 
          #region = as.factor(region),
          #yday = 160,
@@ -70,6 +77,7 @@ grid_months_chinook <- prop_grid %>%
 
 glimpse(grid_months_chinook)
 
+# 200 simulations to estimate CV for species-wide model
 grid_months_list <- grid_months_chinook %>% cleave_by(month_adj)
 length(grid_months_list)
 
@@ -102,18 +110,12 @@ cvall_chinook <- bind_rows(all_list_chinook)
 
 cvall_chinook_rot <- bind_cols(cvall_chinook, 
                        gfplot:::rotate_coords(cvall_chinook$utm_x_1000, cvall_chinook$utm_y_1000, 45, 
-                                              c(sum(range(cvall_chinook$utm_x_1000))/2, 
-                                                sum(range(cvall_chinook$utm_y_1000))/2))) %>%
+                                              rotation_centre)) %>%
+                                              # c(sum(range(cvall_chinook$utm_x_1000))/2, 
+                                              #   sum(range(cvall_chinook$utm_y_1000))/2))) %>%
   mutate(Xr = x * 1000, Yr = y * 1000)
 
 cvall_chinook_rot$cvs %>% range()
-
-cvall_chinook_rot %>%
-  ggplot() +
-  geom_histogram(aes(cvs)) +
-  theme_bw() +
-  facet_wrap(~month)
-
 # CV cutoff value to remove grid points with cvs higher than cutoff
 cutoff <- 5
 
@@ -122,7 +124,6 @@ pred_chinook_cutoff <- cvall_chinook_rot %>%
 
 # saving cutoffs to join with normalized predictions
 saveRDS(pred_chinook_cutoff, here("data", "pred_chinook_cutoff.rds"))
-
 
 cvhists <- cvall_chinook_rot %>%
   dplyr::select(Xr, Yr, cvs, month_f) %>%
@@ -156,8 +157,9 @@ cvplot_chinook_rot <- ggplot(data = chinook_ggdata) +
   ggsidekick::theme_sleek() +
   coord_fixed() +
   theme(legend.key.height = unit(0.8, "cm"),
-        legend.position = "inside",
-        legend.position.inside = c(0.91, 0.25),
+        # for when n_months = 9
+        # legend.position = "inside",
+        # legend.position.inside = c(0.91, 0.25),
         plot.margin = margin(b = 0, t = 0, r = 0, l = 0, unit = 'cm'),
         axis.text.x = element_blank(),
         axis.text.y = element_blank()) +
@@ -170,7 +172,7 @@ cvplot_chinook_rot <- ggplot(data = chinook_ggdata) +
 
 cvplot_chinook_rot
 
-ggsave(cvplot_chinook_rot, filename = here("figs", "cv_month_species.png"), width = 8, height = 6)
+ggsave(cvplot_chinook_rot, filename = here("figs", "cv_month_species.png"), width = 5, height = 6)
 
 pred_plot_chinook_rot <- ggplot(data = chinook_ggdata) +
   geom_tile(aes(x = Xr, y = Yr, fill = pred), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
@@ -182,8 +184,8 @@ pred_plot_chinook_rot <- ggplot(data = chinook_ggdata) +
   ggsidekick::theme_sleek() +
   coord_fixed() +
   theme(legend.key.height = unit(0.8, "cm"),
-        legend.position = "inside",
-        legend.position.inside = c(0.91, 0.25),
+        #legend.position = "inside",
+    #    legend.position.inside = c(0.91, 0.25),
         plot.margin = margin(b = 0, t = 0, r = 0, l = 0, unit = 'cm'),
         axis.text.x = element_blank(),
         axis.text.y = element_blank()) +
@@ -192,7 +194,7 @@ pred_plot_chinook_rot <- ggplot(data = chinook_ggdata) +
   scale_y_continuous(name = NULL, limits = range(cvall_chinook_rot$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_wrap(~month_f, nrow = 2)  
 
-ggsave(pred_plot_chinook_rot, filename = here("figs", "pred_month_species.png"), width = 8, height = 6)
+ggsave(pred_plot_chinook_rot, filename = here("figs", "pred_month_species.png"), width = 5, height = 6)
 
 
 ### Stock-specific model CVs
@@ -200,7 +202,7 @@ ggsave(pred_plot_chinook_rot, filename = here("figs", "pred_month_species.png"),
 grid_months <- prop_grid %>%
   select(-FID, -elevation_meter, -slope_degree, -label, -coast_distance_meter, -depth, - dist_to_coast_km) %>% # removing unused columns to reduce size
   replicate_df(., "region", levels(dat_trim$region)) %>% # c("WCVI", "North/Central BC", "Columbia")) %>%
-  replicate_df(., "month", c(4:12)) %>%
+  replicate_df(., "month", c(5:12)) %>%
   mutate(month = as.numeric(month), 
          region = as.factor(region),
          #yday = 160,
@@ -214,15 +216,20 @@ grid_months <- prop_grid %>%
   select(-X, -Y, -year_adj) 
 
 glimpse(grid_months)
+table(grid_months$month_f)
+table(grid_months$month)
 
+#cleave_by allows to chop by more than one variable
 grid_month_region <- grid_months %>% cleave_by(region, month_adj)
 
 gc()
 
 # predicting on grid chunks for each region and month
+# with 100 simulations
 cv_list <- map(grid_month_region, function (newdata) {
   
   gc()
+  #browser()
   pred <- predict(m_svc, newdata = newdata, nsim = 100,
                   offset = rep.int(median(dat_trim$effort), nrow(newdata)))
   pred_i <- predict(m_svc, newdata = newdata, se_fit = FALSE, re_form_iid = NA,
@@ -239,12 +246,13 @@ cv_list <- map(grid_month_region, function (newdata) {
   sds <- apply(pred, 1, sd) %>% as.numeric()
   means <- apply(pred, 1, mean) %>% as.numeric()
   
+  
   cvs <- apply(pred, 1, \(x) sd(exp(x)) / mean(exp(x))) %>% as.numeric()
   tibble(pred = pred_i, means = means %>% m_svc$family$linkinv(), sds = sds, cvs = cvs)
 })
 
 saveRDS(cv_list, here("data", "fits", "cv_stock_grid_list.rds"))
-cv_list <- readRDS(here("data", "fits", "cv_stock_grid_list.rds"))
+#cv_list <- readRDS(here("data", "fits", "cv_stock_grid_list.rds"))
 
 all_list <- map2(grid_month_region, cv_list, function (grid, cvs) {
   bind_cols(grid, cvs)
@@ -254,8 +262,9 @@ cvall <- bind_rows(all_list)
 
 cvall_stock_rot <- bind_cols(cvall, 
                           gfplot:::rotate_coords(cvall$utm_x_1000, cvall$utm_y_1000, 45, 
-                                                 c(sum(range(cvall$utm_x_1000))/2, 
-                                                   sum(range(cvall$utm_y_1000))/2))) %>%
+                                                 rotation_centre)) %>%
+                                                 # c(sum(range(cvall$utm_x_1000))/2, 
+                                                 #   sum(range(cvall$utm_y_1000))/2))) %>%
   mutate(Xr = x * 1000, Yr = y * 1000)
 
 
@@ -282,7 +291,6 @@ stock_ggdata <- cvall_stock_rot %>%
 
 pred_stock_cutoff <- cvall_stock_rot %>%
   mutate(cutoff_keep = if_else(cvs < cutoff, TRUE, FALSE))
-
 
 # saving cutoffs to join with normalized predictions
 saveRDS(pred_stock_cutoff, here("data", "pred_stock_cutoff.rds"))
@@ -342,8 +350,7 @@ cvplot_stock_rot_2 <- stock_ggdata %>%
 ggsave(cvplot_stock_rot_1 + cvplot_stock_rot_2 +
          plot_annotation(title = 'Stock-specific model',
                          theme = theme(plot.title = element_text(size = 18))),
-       filename = here::here("figs", paste0("cv_stock_region_month_",
-                                            ymd(Sys.Date()),".png")), 
+       filename = here::here("figs", "cv_stock_region_month.png"), 
        width = 15, height = 11)
 
 

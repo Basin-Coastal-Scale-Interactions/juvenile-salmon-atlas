@@ -8,12 +8,12 @@ library(here)
 library(janitor)
 
 # reading unique event data (date, location, etc.) in catch data set
-dat_trim <- readRDS(here::here("data", "cleaned_all_bridge_dat_20250122.rds"))
+dat <- readRDS(here::here("data", "cleaned_all_bridge_catch_dat.rds"))
 
-range(dat_trim$date)
+range(dat$date)
 
 # extracting bridge data from juvenile salmon catch data set
-bridge <- dat_trim %>%
+bridge <- dat %>%
   filter(species == "chinook") %>%
   # select(unique_event:utm_y) %>%
   # unique() %>%

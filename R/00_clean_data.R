@@ -1,7 +1,4 @@
-### New data wrangling code Jan 23 2024 based on Cam's code in survey-index repo
-
-####### NEED TO COPY SYNOPTIC AREA AND PFMAS FROM CLEAN_BCSI_SEB_VERSION.R!!!!
-####### THIS DATASET HAS 2023 
+### Data wrangling prior to model fitting
 
 library(tidyverse)
 library(sf)
@@ -30,37 +27,37 @@ get_ll <- function(x, y, zone, loc){
 
 ## add UTM to bridge
 
-# this code uses the start longitude to get the UTM zone. 
+## This code uses the start longitude to get the UTM zone. 
 ##  NOTE that for some modelling consistent zone of 9 more appropriate 
 
 ## use zone = 9 for bc coastwide modelling as per Sean Anderfson suggestion. 
 ##  use zone = "vary" if you want the correct utm zone for the longitude to be used
 ##  note that data transcribed from multiple zone transformation should not be combined
 
-get_utm <- function(x, y, zone, loc){
-  
-  if (zone == "9") {
-    utm_zone <- zone
-  } else if (zone == "vary") {
-    utm_zone <- floor((x/6)+31)
-  }
-  
-  epsg = paste0("+init=epsg:326",(str_pad(utm_zone, 2,
-                                          side = "left", pad = "0")))
-  
-  points = SpatialPoints(cbind(x, y),
-                         proj4string = CRS("+proj=longlat +datum=WGS84"))
-  
-  points_utm = spTransform(points, CRSobj = CRS(epsg))
-  
-  if (loc == "x") {
-    return(coordinates(points_utm)[,1])
-  } else if (loc == "y") {
-    return(coordinates(points_utm)[,2])
-  } else if (loc == "z") {
-    return(utm_zone)
-  }
-}
+# get_utm <- function(x, y, zone, loc){
+#   
+#   if (zone == "9") {
+#     utm_zone <- zone
+#   } else if (zone == "vary") {
+#     utm_zone <- floor((x/6)+31)
+#   }
+#   
+#   epsg = paste0("+init=epsg:326",(str_pad(utm_zone, 2,
+#                                           side = "left", pad = "0")))
+#   
+#   points = SpatialPoints(cbind(x, y),
+#                          proj4string = CRS("+proj=longlat +datum=WGS84"))
+#   
+#   points_utm = spTransform(points, CRSobj = CRS(epsg))
+#   
+#   if (loc == "x") {
+#     return(coordinates(points_utm)[,1])
+#   } else if (loc == "y") {
+#     return(coordinates(points_utm)[,2])
+#   } else if (loc == "z") {
+#     return(utm_zone)
+#   }
+# }
 
 get_utm <- function(x, y, zone, loc){
   points = SpatialPoints(cbind(x, y),
@@ -75,34 +72,12 @@ get_utm <- function(x, y, zone, loc){
   }
 }
 
-# 
 # testutm <- test1 %>% 
 #   mutate(
 #     utm_x = get_utm(START_LONGITUDE, START_LATITUDE, zone = 9, loc = "x"),
 #     utm_y = get_utm(START_LONGITUDE, START_LATITUDE, zone = 9, loc = "y"),
 #     utm_zone = get_utm(START_LONGITUDE, START_LATITUDE, zone = 9, loc = "z")
 #   ) 
-
-
-
-
-
-### current dataset provided by A Tabata via email on Jan 3, 2024
-
-# dat_in <- read.csv(
-#   here::here(
-#     "data-raw", "index_data_20240103.csv"
-#   ),
-#   stringsAsFactors = FALSE
-# ) %>% 
-#   janitor::clean_names() %>% 
-#   mutate(
-#     lon = get_ll(utm_x, utm_y, zone = "9", loc = "x"),
-#     lat = get_ll(utm_x, utm_y, zone = "9", loc = "y")
-#   )
-# 
-# glimpse(dat_in)
-
 
 ### Data pull done by myself using Amy's code and local db version BCSI_be_20240918
 ## Nov 20 2024 update
@@ -435,34 +410,19 @@ dat_trim <- dat %>%
          volume_km3, n_juv, n_ad, n_total, species) %>% 
   droplevels()
 
+# filedate <- sprintf("%04d%02d%02d",year(today()),month(today()),day(today()))
+# ymd(Sys.Date())
+# today()
 
-
-filedate <- sprintf("%04d%02d%02d",year(today()),month(today()),day(today()))
-
-saveRDS(
-  dat_trim,
-  here::here(
-    "data", paste0("cleaned_atlas_dat_", filedate, ".rds")
-  )
-)
-
-saveRDS(
-  dat,
-  here::here(
-    "data", paste0("cleaned_all_bridge_dat_", filedate, ".rds")
-  )
-)
+saveRDS(dat_trim, here("data", "cleaned_atlas_catch_dat.rds"))
+saveRDS(dat, here("data", "cleaned_all_bridge_catch_dat.rds"))
 
 dim(dat_trim)
 
 ## MISC CHECKS -----------------------------------------------------------------
 
-dat_trim <- readRDS(  here::here(
-  "data", paste0("cleaned_atlas_dat_", filedate, ".rds")
-))
-dat <- readRDS(  here::here(
-    "data", paste0("cleaned_all_bridge_dat_", filedate, ".rds")
-  ))
+# dat_trim <- readRDS(here("data", "cleaned_atlas_catch_dat.rds"))
+# dat <- readRDS(here("data", "cleaned_all_bridge_catch_dat.rds"))
 
 min_lat <- min(floor(dat_trim$lat) - 0.1)
 max_lat <- max(dat_trim$lat) + 0.1

@@ -5,7 +5,7 @@ library(cowplot)
 library(sf)
 
 chinook_dat <- readRDS(here::here("data", "chinook_dat_allcoast.rds"))        
-gsi_dat <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2025-01-27.rds")) %>%
+gsi_dat <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2025-02-03.rds")) %>%
   mutate(season_n = as.numeric(season_f),
          scale_month_adj = scale(month_adj)[, 1],
          year_adj = ifelse(month > 2, year, year - 1), # adjusting year to represent fish cohorts
@@ -17,9 +17,9 @@ max_lat <- max(c(chinook_dat$lat, gsi_dat$lat)) + 0.25
 min_lon <- min(floor(c(chinook_dat$lon, gsi_dat$lon)) - 0.25)
 max_lon <- max(c(chinook_dat$lon, gsi_dat$lon)) + 0.25
 
-coast <- rbind(rnaturalearth::ne_states( "United States of America", 
-                                         returnclass = "sf"), 
-               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>% 
+coast <- rbind(rnaturalearth::ne_states( "United States of America",
+                                         returnclass = "sf"),
+               rnaturalearth::ne_states( "Canada", returnclass = "sf")) %>%
   st_crop(., xmin = min_lon, ymin = min_lat, xmax = max_lon, ymax = max_lat) %>%
   st_transform(., crs = sp::CRS("+proj=longlat +datum=WGS84"))
 

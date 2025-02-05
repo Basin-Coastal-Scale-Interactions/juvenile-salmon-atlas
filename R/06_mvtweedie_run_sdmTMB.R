@@ -10,7 +10,7 @@ source("R/cleave_by.R")
 
 #  Load GSI data ------------------------------------------------------------
 
-# 0725 includes all fish, 0830 doesn't include fish with max stock_prop <0.5
+# doesn't include fish with max stock_prop <0.5
 dat <- readRDS(here::here("data", "chinook_gsi_counts.rds")) %>% 
   select(-month_adj) %>%
   mutate(month_adj = ifelse(month > 3, month - 3, month + 9), # redo month_adj to start in April
@@ -35,7 +35,7 @@ levels(dat$region)
 dat_trim <- filter(dat, lat < 57)
 
 # saving df used for model fititng
-saveRDS(dat_trim, here::here("data", paste0("chinook_gsi_counts_fitted_",ymd(Sys.Date()),".rds")))
+saveRDS(dat_trim, here::here("data", "chinook_gsi_counts_fitted.rds"))
 
 dat_trim %>% group_by(region) %>% summarize(propsum = sum(stock_prop))
 
@@ -142,7 +142,7 @@ m_svc <- sdmTMB(
   offset = dat_trim$effort,
   data = dat_trim,
   time = "month_adj",
-  extra_time = 1:12, #c(2,3,11),
+  extra_time = 2:12, 
   spatial = "off",
   spatiotemporal = "rw",
   anisotropy = FALSE,
@@ -156,6 +156,7 @@ b_smooth_map <-  1:40
 b_smooth_map[33:36] <- NA
 b_smooth_map
 
+# Mapping same SD for both all coefficients and interactions (ln_tau_Z)
 m_svc <- update(m_svc, do_fit = TRUE,
                 control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 10), rep(2, 10)))#,
                                                    # b_smooth = factor(b_smooth_map),
@@ -173,10 +174,8 @@ m_svc$version
 m_svc$sd_report
 tidy(m_svc, "ran_pars", conf.int = TRUE)
 
-saveRDS(m_svc, file = here("data", "fits", paste0("chinook_gsi_prop_svc_sdmTMB_",ymd(Sys.Date()),".rds")))
-
-
-m_svc <- readRDS(here::here("data", "fits", paste0("chinook_gsi_prop_svc_sdmTMB_",ymd(Sys.Date()),".rds")))
+saveRDS(m_svc, file = here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
+#m_svc <- readRDS(here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
 m_svc$formula
 m_svc$time
 m_svc$extra_time
@@ -185,10 +184,6 @@ m_svc$data$region %>% table
 
 
 ### PREDICTING 
-
-# Whole coast index grid that will get cut
-# index_grid_old <- readRDS(here("data", "index_grid.rds")) 
-# glimpse(index_grid_old)
 
 index_grid <- readRDS(here("data", "pred_grid_all_coast.rds")) %>%
   # filter(row_number() %% 5 == 1) %>% ### DOWNSAMPLING GRID %>%
@@ -233,9 +228,8 @@ saveRDS(prop_grid, file = here("data", "gsi-prop-grid.rds"))
 
 
 # prop_grid <- readRDS(here("data", "gsi-prop-grid.rds"))
-# m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB_2024-12-13.rds"))
-# dat_trim <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2024-12-13.rds"))
-
+# m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
+# dat_trim <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2025-02-03.rds"))
 
 # functions for quickly applying and unapplying scale()
 scale_est <- function (x, unscaled_vec) {
@@ -248,7 +242,7 @@ scale_est <- function (x, unscaled_vec) {
 grid_months <- prop_grid %>%
   select(-FID, -elevation_meter, -slope_degree, -label, -coast_distance_meter, -depth, - dist_to_coast_km) %>% # removing unused columns to reduce size
   replicate_df(., "region", levels(dat_trim$region)) %>% # c("WCVI", "North/Central BC", "Columbia")) %>%
-  replicate_df(., "month", c(4:12)) %>%
+  replicate_df(., "month", c(5:12)) %>%
   mutate(month = as.numeric(month), 
          region = as.factor(region),
          #yday = 160,
@@ -259,11 +253,9 @@ grid_months <- prop_grid %>%
          month_adj = ifelse(month > 3, month - 3, month + 9), # adjusting to start in April
          scale_month_adj = scale_est(month_adj, dat_trim$month_adj),
          NULL) %>%
-  select(-X, -Y, -year_adj) #%>%
-  #filter(!month_adj %in% c(11)) #
+  select(-X, -Y, -year_adj) 
 
 glimpse(grid_months)
-
 
 
 # Splitting grid data frame into manageable chunks for prediction
@@ -271,17 +263,11 @@ grid_region <- grid_months %>% cleave_by(region, month_adj)
 #grid_region <- grid_months %>% group_split(group_id = region) 
 
 length(grid_region)
-#newdata <- dat %>% filter(region == "WCVI")
-#region <- "WCVI"
-# 
-# grid_region <- grid_months %>% nest(c(region, month_adj)) 
-# glimpse(grid_region)
 
 # reduce memory usage
 #rm(grid_months)
 gc()
 
-# 
 # predtest <- predict(m_svc, newdata = grid_region[[1]], nsim = 3,
 #                 offset = rep.int(median(dat_trim$effort), nrow(grid_region[[1]])))
 # glimpse(predtest)
@@ -297,35 +283,20 @@ predict_list <- map(grid_region, function (newdata) {
   
   # max_chunk_length <- 5000 
   # smaller_chunks <- group_split(newdata, group_id = row_number() %/% max_chunk_length)
-    
-  # pred_list <- map(smaller_chunks,
-  #                  ~predict(m, newdata = .x, se_fit = TRUE, re_form_iid = NA, 
-  #                          offset = rep.int(median(dat$effort), nrow(.x))))
-  
   # pred_list <- map(smaller_chunks,
   #                  ~predict(m, newdata = .x, se_fit = FALSE, re_form_iid = NA, 
-  #                           offset = rep.int(median(dat$effort), nrow(.x))))
+  #                           offset = rep.int(median(dat_trim$effort), nrow(.x))))
+  
   gc()
   pred <- predict(m_svc, newdata = newdata, se_fit = FALSE, re_form_iid = NA,
           offset = rep.int(median(dat_trim$effort), nrow(newdata)))
   
-  #pred <- bind_rows(pred_list)
   group_id <- as.character(unique(pred$region))
   print(group_id)
 
-  # print(head(pred))
-  # pred_linkinv <- pred$est %>% m$family$linkinv()
-  # print(head(pred_linkinv))
-
-  #pred_ic[, group_id] 
   pred$pred_i <- pred$est %>% m_svc$family$linkinv() #pred_linkinv
   pred
-  #se_pred_ic[, group_id] <- pred$est_se
 })
-
-#pred <- bind_rows(predict_list)
-
-
 
 
 # creating objects for converting predictions to proportions
@@ -390,7 +361,7 @@ pred2 <- bind_rows(pred_region2)
 
 
 head(pred)
-head(pred)
+head(pred2)
 head(pred_ic)
 head(rowsum_pred_ic)
 head(prob_ic)
@@ -420,31 +391,29 @@ saveRDS(predict_list, file = "data/fits/gsi-prediction-normalized-svc-sdmTMB-lis
 
 source("R/plot_map.R")
 
-p <- pred2 %>%
-  dplyr::select(utm_x_1000, utm_y_1000, prob_i, salmon_region = region, month_f) %>%
-  ggplot(data = .) + # (dat, aes(X, Y, color = {{ column }})) +
+pred_ggdata <- pred2 %>%
+  dplyr::select(utm_x_1000, utm_y_1000, prob_i, salmon_region = region, month_f)
+
+p <- ggplot(data = pred_ggdata) + # (dat, aes(X, Y, color = {{ column }})) +
   geom_raster( aes(x=utm_x_1000, y=utm_y_1000, fill = prob_i)) +
   scale_fill_viridis_c(name = "Probability of\nGSI assignment",#"Predicted\nnumber of\njuveniles\nin GSI samples",
                        labels = scales::comma,#) +#,
                        trans = ggsidekick::fourth_root_power_trans()) +
   ggsidekick::theme_sleek() +
   geom_sf(data = all_coast_km, color = "gray80", fill = "gray90") +
-  scale_x_continuous(name = NULL, limits = range(pred$utm_x_1000), expand = c(0, 0)) +
-  scale_y_continuous(name = NULL, limits = range(pred$utm_y_1000), expand = c(0, 0)) +
+  scale_x_continuous(name = NULL, limits = range(pred2$utm_x_1000),
+                     labels = c("", "132°W", "", "128°W", "", "124°W", ""),
+                                expand = c(0, 0)) +
+  scale_y_continuous(name = NULL, limits = range(pred2$utm_y_1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
   ggtitle("Juvenile chinoook GSI")
 
-p
 
-ggsave(p, filename = here::here("figs", 
-                                paste0("chinook_by_gsi_prob_i_svc_mapped_tauZ_sdmTMB_", 
-                                       ymd(Sys.Date()),"_no05prop.png")), 
-       width = 14, height = 12)
-#ggsave(p, filename = here::here("figs", "chinook_by_gsi_prob_i_svc_int_no_tauZ_map.png"), width = 14, height = 12)
+# rm(pred)
+# rm(predict_region)
 
-# +
-#   ggtitle(paste0("Predicted distribution of juvenile ", species," by month (denser mesh)")) +
-#   #scale_x_continuous(name = NULL, limits = c(462700, 814800), expand = c(0, 0)) +
-#   #scale_y_continuous(name = NULL, limits = c(5350050, 5681850), expand = c(0, 0)) +
-#   theme(legend.key.height = unit(0.06, 'npc'))
+ggsave(p, filename = here("figs", 
+                          "chinook_by_gsi_prob_i_svc_mapped_tauZ_sdmTMB_no05prop.png"), 
+       width = 14, height = 16)
+
 

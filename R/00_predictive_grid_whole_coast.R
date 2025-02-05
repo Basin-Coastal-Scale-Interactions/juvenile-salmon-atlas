@@ -3,11 +3,18 @@ library(ggplot2)
 library(ggspatial)
 library(ggsidekick)
 library(sf)
+library(sfheaders)
 library(here)
+library(fmesher)
 
 ##################################
 ### Whole coast predictive grid from Kelsey
 ##################################
+
+# Loading chinook data and sourcing coast files for plotting
+source("R/plot_map.R")
+chinook_dat <- readRDS(here::here("data", "cleaned_atlas_dat_20241210.rds")) %>%
+  filter(species == "chinook")
 
 # loading whole grid
 grid_list <- read_csv(here::here("data-raw", "spatial", "grid_extended20241211.csv")) %>% 
@@ -47,7 +54,6 @@ interiorsf <- fmesher::fm_segm(sdmTMB_mesh$mesh, boundary = FALSE) %>%
   fm_as_sfc(multi = FALSE) %>% 
   st_as_sf(crs = 6338)
 
-
 polysp  <- st_polygon(list(as.matrix(sfheaders::sf_to_df(interiorsf)[, 3:4])*1000)) # removing third column with labels
 
 sf_polygon(as.matrix(sfheaders::sf_to_df(interiorsf)[, 3:4])*1000, dim = "XY") %>%
@@ -59,13 +65,6 @@ gridsp_sub <- gridsp[apply(st_intersects(gridsp, polysp), 1, any), ] %>%
 
 dim(gridsp)
 dim(gridsp_sub)
-
-# Loading chinook data and sourcing coast files for plotting
-source("R/plot_map.R")
-chinook_dat <- readRDS(here::here("data", "cleaned_atlas_dat_20241210.rds")) %>%
-  filter(species == "chinook")
-
-
 
 # plotting subsetted grid and chinook points
 gridsp_sub %>% #gridsp_sub
