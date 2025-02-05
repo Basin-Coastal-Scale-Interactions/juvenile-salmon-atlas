@@ -15,10 +15,10 @@ library(sf)
 source("R/plot_smoothers.R")
 
 # latest wrangling has all of 2024
-dat_trim <- readRDS(here::here("data", "cleaned_atlas_dat_20250122.rds")) 
+dat_in <- readRDS(here::here("data", "cleaned_atlas_catch_dat.rds")) 
 
 # downscale data and predictive grid
-dat <- dat_trim %>% 
+dat <- dat_in %>% 
   mutate(
     month_f = month(date, label = TRUE),
     month_adj = case_when(
