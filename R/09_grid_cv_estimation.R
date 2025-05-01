@@ -16,7 +16,10 @@ source("R/99_rotation_functions.R")
 prop_grid <- readRDS(here("data", "gsi-prop-grid.rds"))
 pred_grid <- readRDS(here("data", "pred_grid_all_coast.rds"))
 m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
-dat_trim <- readRDS(here::here("data", "chinook_gsi_counts_fitted.rds"))
+m_svc$version
+dat_trim <- m_svc$data
+table(dat_trim$region)
+#dat_trim <- readRDS(here::here("data", "chinook_gsi_counts_fitted.rds"))
 m_chinook <- readRDS(here("data", "fits", "fits_list_mdmesh.rds"))$chinook
 
 ###  rotating coastline 
@@ -34,6 +37,7 @@ coast_proj4 <- st_cast(coast_proj, "POLYGON")
 rotated_coast <- list()
 rotation_angle <- 45
 rotation_centre <- c(sum(range(pred_grid$utm_x_1000))/2, sum(range(pred_grid$utm_y_1000))/2)
+saveRDS(rotation_centre, here("data", "rot_centre.rds"))
 
 for (i in seq_len(dim(coast_proj4)[1])) {
   rotated_coast[[i]] <- splitrotatepolygon(
@@ -84,9 +88,11 @@ length(grid_months_list)
 cv_list_chinook200 <- map(grid_months_list, function (newdata) {
   gc()
   pred <- predict(m_chinook, newdata = newdata, nsim = 200,
-                  offset = rep.int(median(dat_trim$effort), nrow(newdata)))
+  offset = rep.int(median( m_chinook$data$effort), nrow(newdata)))
+  #offset = rep.int(median(dat_trim$effort), nrow(newdata)))
   pred_i <- predict(m_chinook, newdata = newdata, se_fit = FALSE, re_form_iid = NA,
-                    offset = rep.int(median(dat_trim$effort), nrow(newdata))) %>%
+                    # offset = rep.int(median(dat_trim$effort), nrow(newdata)),
+                    offset = rep.int(median( m_chinook$data$effort), nrow(newdata)))  %>% 
     pull(est) %>%
     m_chinook$family$linkinv() %>% 
     as.numeric()
@@ -119,11 +125,18 @@ cvall_chinook_rot$cvs %>% range()
 # CV cutoff value to remove grid points with cvs higher than cutoff
 cutoff <- 5
 
+
 pred_chinook_cutoff <- cvall_chinook_rot %>%
   mutate(cutoff_keep = if_else(cvs < cutoff, TRUE, FALSE))
 
 # saving cutoffs to join with normalized predictions
 saveRDS(pred_chinook_cutoff, here("data", "pred_chinook_cutoff.rds"))
+#pred_chinook_cutoff <- readRDS(here("data", "pred_chinook_cutoff.rds"))
+
+# saving cvs data frame for faster replotting
+saveRDS(cvall_chinook_rot, here("data", "cvs_chinook.rds"))
+#cvall_chinook_rot <- readRDS(here("data", "cvs_chinook.rds"))
+
 
 cvhists <- cvall_chinook_rot %>%
   dplyr::select(Xr, Yr, cvs, month_f) %>%
@@ -143,14 +156,16 @@ ggsave(cvhists, filename = here("figs", "cv_hist_species.png"), width = 6, heigh
 
 chinook_ggdata <- cvall_chinook_rot %>%
   dplyr::select(Xr, Yr, cvs, pred, month_f) %>%
-  filter(cvs < cutoff)
+  #filter(cvs < cutoff)
+  mutate(cvs2 = if_else(cvs <= cutoff, cvs, NA)) 
 
 cvplot_chinook_rot <- ggplot(data = chinook_ggdata) +
   #geom_point(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb), shape = 15) + # this hack works but is slower to render 
-  geom_tile(aes(x = Xr, y = Yr, fill = cvs), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
+  geom_tile(aes(x = Xr, y = Yr, fill = cvs2), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
   #geom_polygon(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb)) +
   scale_fill_viridis_c(name = "Predicted\ncoefficient\nof variation",
                        labels = scales::comma,
+                       na.value = "orange",
                        # trans = ggsidekick::fourth_root_power_trans(),
                        limits = c(0, cutoff)#max(cvall_chinook_rot$cvs))
   ) +
@@ -165,12 +180,17 @@ cvplot_chinook_rot <- ggplot(data = chinook_ggdata) +
         axis.text.y = element_blank()) +
   geom_sf(data = rotated_coast, color = NA, fill = "gray90") +
   #annotate("text", x = 616000, y = 5290000, color = "red", size = 11, label = "?") +
-  scale_x_continuous(name = NULL, limits = range(cvall_chinook_rot$Xr)+c(-1000,1000), expand = c(0, 0)) +
-  scale_y_continuous(name = NULL, limits = range(cvall_chinook_rot$Yr)+c(-1000,1000), expand = c(0, 0)) +
+  scale_x_continuous(name = NULL, 
+                     limits = range(cvall_chinook_rot$Xr, na.rm = TRUE) + c(-1000,1000), 
+                     expand = c(0, 0)) +
+  scale_y_continuous(name = NULL, 
+                     limits = range(cvall_chinook_rot$Yr, na.rm = TRUE) + c(-1000,1000), 
+                     expand = c(0, 0)) +
   facet_wrap(~month_f, nrow = 2)  
   #ggtitle("Juvenile chinoook stock distribution") +
 
 cvplot_chinook_rot
+
 
 ggsave(cvplot_chinook_rot, filename = here("figs", "cv_month_species.png"), width = 5, height = 6)
 
@@ -230,10 +250,10 @@ cv_list <- map(grid_month_region, function (newdata) {
   
   gc()
   #browser()
-  pred <- predict(m_svc, newdata = newdata, nsim = 100,
-                  offset = rep.int(median(dat_trim$effort), nrow(newdata)))
-  pred_i <- predict(m_svc, newdata = newdata, se_fit = FALSE, re_form_iid = NA,
-                  offset = rep.int(median(dat_trim$effort), nrow(newdata))) %>%
+  pred <- predict(m_svc, newdata = newdata, nsim = 100)
+                #  offset = rep.int(median(dat_trim$effort), nrow(newdata)))
+  pred_i <- predict(m_svc, newdata = newdata, se_fit = FALSE, re_form_iid = NA) %>%
+                 # offset = rep.int(median(dat_trim$effort), nrow(newdata))) %>%
     pull(est) %>%
     m_svc$family$linkinv() %>% 
     as.numeric()
@@ -287,7 +307,8 @@ ggsave(cv_stock_hists, filename = here::here("figs", "stock_cvs_hists.png"),
 
 stock_ggdata <- cvall_stock_rot %>%
   dplyr::select(Xr, Yr, stock_cvs = cvs, pred, salmon_region = region, month_f) %>%
-  filter(stock_cvs < cutoff)
+  #filter(cvs < cutoff)
+  mutate(stock_cvs2 = if_else(stock_cvs <= cutoff, stock_cvs, NA)) 
 
 pred_stock_cutoff <- cvall_stock_rot %>%
   mutate(cutoff_keep = if_else(cvs < cutoff, TRUE, FALSE))
@@ -299,10 +320,11 @@ cvplot_stock_rot_1 <- stock_ggdata %>%
   filter(salmon_region %in% c("NBC/SEAK", "Central BC", "Salish Coastal", "WA/OR Coastal", "WCVI")) %>%
   ggplot(data = .) +
   #geom_point(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb), shape = 15) + # this hack works but is slower to render 
-  geom_tile(aes(x = Xr, y = Yr, fill = stock_cvs), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
+  geom_tile(aes(x = Xr, y = Yr, fill = stock_cvs2), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
   #geom_polygon(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb)) +
   scale_fill_viridis_c(name = "Predicted\ncoefficient\nof variation",
                        labels = scales::comma,
+                       na.value = "orange",
                        # trans = ggsidekick::fourth_root_power_trans(),
                        limits = c(0, cutoff)
                        ) +
@@ -325,10 +347,11 @@ cvplot_stock_rot_2 <- stock_ggdata %>%
   filter(!salmon_region %in% c("NBC/SEAK", "Central BC", "Salish Coastal", "WA/OR Coastal", "WCVI")) %>%
   ggplot(data = .) +
   #geom_point(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb), shape = 15) + # this hack works but is slower to render 
-  geom_tile(aes(x = Xr, y = Yr, fill = stock_cvs), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
+  geom_tile(aes(x = Xr, y = Yr, fill = stock_cvs2), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
   #geom_polygon(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb)) +
   scale_fill_viridis_c(name = "Predicted\ncoefficient\nof variation",
                        labels = scales::comma,
+                       na.value = "orange",
                        # trans = ggsidekick::fourth_root_power_trans(),
                        limits = c(0, cutoff)
   ) +
@@ -351,6 +374,6 @@ ggsave(cvplot_stock_rot_1 + cvplot_stock_rot_2 +
          plot_annotation(title = 'Stock-specific model',
                          theme = theme(plot.title = element_text(size = 18))),
        filename = here::here("figs", "cv_stock_region_month.png"), 
-       width = 15, height = 11)
+       width = 11, height = 11)
 
 

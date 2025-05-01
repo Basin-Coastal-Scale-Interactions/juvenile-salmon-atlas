@@ -14,7 +14,7 @@ source("R/cleave_by.R")
 dat <- readRDS(here::here("data", "chinook_gsi_counts.rds")) %>% 
   select(-month_adj) %>%
   mutate(month_adj = ifelse(month > 3, month - 3, month + 9), # redo month_adj to start in April
-         season_n = as.numeric(season_f),
+        # season_n = as.numeric(season_f),
          scale_month_adj = scale(month_adj)[, 1],
          year_adj = ifelse(month > 3, year, year - 1), # adjusting year to represent fish cohorts
          # year_f = as.factor(year),
@@ -139,7 +139,7 @@ m_svc <- sdmTMB(
   stock_prop ~ 0 + region + (1 | year_adj_f) + s(scale_month_adj, by = region, bs = "tp", k = 6),
   family = tweedie(),
   spatial_varying = ~ 0 + region * scale_month_adj,
-  offset = dat_trim$effort,
+ # offset = dat_trim$effort,
   data = dat_trim,
   time = "month_adj",
   extra_time = 2:12, 
@@ -152,15 +152,16 @@ m_svc <- sdmTMB(
   do_fit = FALSE
 )
 
-b_smooth_map <-  1:40
-b_smooth_map[33:36] <- NA
-b_smooth_map
+# b_smooth_map <-  1:40
+# b_smooth_map[17:20] <- NA
+# b_smooth_map
 
 # Mapping same SD for both all coefficients and interactions (ln_tau_Z)
 m_svc <- update(m_svc, do_fit = TRUE,
-                control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 10), rep(2, 10)))#,
-                                                   # b_smooth = factor(b_smooth_map),
-                                                   # ln_smooth_sigma = factor(c(1,2,3,4,5,6,7,8,NA,10))
+                control = sdmTMBcontrol(map = list(ln_tau_Z = factor(c(rep(1, 11), rep(2, 11))),
+                                                  # b_smooth = factor(b_smooth_map),
+                                                  ln_smooth_sigma = factor(rep(1, 11))
+                                                  # ln_smooth_sigma = factor(c(1,2,3,4,NA,6,7,8,9,10))
                                                    )
                                         )
                 )
@@ -179,6 +180,9 @@ saveRDS(m_svc, file = here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
 m_svc$formula
 m_svc$time
 m_svc$extra_time
+# this shows the 20 distinct parameters relevant to ln_tau_Z, which are the
+# ten regions plus ten interactions of each region with scaled month, which is continuous
+m_svc$spatial_varying
 
 m_svc$data$region %>% table
 
@@ -288,8 +292,7 @@ predict_list <- map(grid_region, function (newdata) {
   #                           offset = rep.int(median(dat_trim$effort), nrow(.x))))
   
   gc()
-  pred <- predict(m_svc, newdata = newdata, se_fit = FALSE, re_form_iid = NA,
-          offset = rep.int(median(dat_trim$effort), nrow(newdata)))
+  pred <- predict(m_svc, newdata = newdata, se_fit = FALSE, re_form_iid = NA)
   
   group_id <- as.character(unique(pred$region))
   print(group_id)
@@ -366,10 +369,10 @@ head(pred_ic)
 head(rowsum_pred_ic)
 head(prob_ic)
 
-head(pred$prob_i)
-length(pred$prob_i)
+head(pred2$prob_i)
+length(pred2$prob_i)
 
-pred %>%
+pred2 %>%
   ggplot(data = .) +
   geom_histogram(aes(prob_i)) +
   facet_grid(region ~ month) 
@@ -413,7 +416,7 @@ p <- ggplot(data = pred_ggdata) + # (dat, aes(X, Y, color = {{ column }})) +
 # rm(predict_region)
 
 ggsave(p, filename = here("figs", 
-                          "chinook_by_gsi_prob_i_svc_mapped_tauZ_sdmTMB_no05prop.png"), 
+                          "chinook_by_gsi_prob_i_svc_mapped_tauZ_sdmTMB_no05prop_fraserfall.png"), 
        width = 14, height = 16)
 
 

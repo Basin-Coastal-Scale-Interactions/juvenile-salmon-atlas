@@ -3,14 +3,22 @@
 library(tidyverse)
 library(cowplot)
 library(sf)
+library(knitr)
+library(kableExtra)
+options(knitr.kable.NA = '')
+
 
 chinook_dat <- readRDS(here::here("data", "chinook_dat_allcoast.rds"))        
-gsi_dat <- readRDS(here::here("data", "chinook_gsi_counts_fitted_2025-02-03.rds")) %>%
-  mutate(season_n = as.numeric(season_f),
-         scale_month_adj = scale(month_adj)[, 1],
+gsi_dat <- readRDS(here::here("data", "chinook_gsi_counts_fitted.rds")) %>%
+  mutate(scale_month_adj = scale(month_adj)[, 1],
          year_adj = ifelse(month > 2, year, year - 1), # adjusting year to represent fish cohorts
          # year_f = as.factor(year),
-         year_adj_f = as.factor(year_adj)) 
+         year_adj_f = as.factor(year_adj))
+m_svc <- readRDS(here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
+m_svc$version
+gsidat <- m_svc$data
+table(gsidat$region)
+
 
 min_lat <- min(floor(c(chinook_dat$lat, gsi_dat$lat)) - 0.25)
 max_lat <- max(c(chinook_dat$lat, gsi_dat$lat)) + 0.25
@@ -124,12 +132,12 @@ bubble_temp_coverage <- chinook_dat %>%
   )
 
 bubble_combined <- bind_rows(chinook_dat %>% 
-            group_by(year, week, survey_f) %>% 
+            group_by(year, week) %>% 
             summarize(n_tows = length(unique(unique_event)), .groups = "drop") %>%
             mutate(model = "Species-wide model"),
             
           gsi_dat %>% 
-            group_by(year, week, survey_f) %>% 
+            group_by(year, week) %>% 
             summarize(n_tows = length(unique(unique_event)), .groups = "drop") %>%
             mutate(model = "Stock-specifc model")) %>%
   ungroup() %>% 
@@ -187,14 +195,14 @@ ch_monthly <- ggplot() +
 ggsave(here::here("figs", "chinook_data_by_month.png"), 
        ch_monthly, width = 10, height = 8, units = "in")
 
-#### GSI data
+#### GSI sampling monthly coverage
 
 # adding missing month factor levels
 gd2 <- gsi_dat %>%
   mutate(month_f = ordered(month_f, levels = month(1:12, abbr = TRUE, label = TRUE)))
 
 nodatagsi_text <- data.frame(
-  label = c("No data", "", "", "No data", "No data", rep("", 7)),
+  label = c("No data", "", "", "No data", rep("", 8)),
   month_f   = ordered(levels(cd2$month_f))
 )
 
@@ -217,6 +225,30 @@ gsi_monthly <- ggplot() +
   facet_wrap(~month_f, nrow = 3, drop = FALSE)   +
   geom_text(data = nodatagsi_text, mapping = aes(x = -130, y = 48, label = label), size = 6)
 
-
 ggsave(here::here("figs", "gsi_data_by_month.png"), 
        gsi_monthly, width = 10, height = 8, units = "in")
+
+
+### Summary table of summed GSI proportions by stock grouping and months
+
+gsi_tb <- gsidat %>%
+  group_by(month_f, region) %>%
+  summarise(sum = sum(stock_prop)) %>%
+  pivot_wider(names_from = month_f, values_from = sum) %>%
+  ungroup() %>%
+  group_by(region) %>%
+  mutate(Total = sum(Feb+Mar+Jun+Jul+Aug+Sep+Oct+Nov+Dec)) %>% 
+  mutate(Jan = 0, Apr = 0, May = 0) %>%
+  select(Region = region, month(1:12, abbr = TRUE, label = TRUE), Total) %>%
+  janitor::adorn_totals("row") %>% 
+  mutate_if(is.numeric, ~round(., 1))
+
+gsi_kb <- kable(gsi_tb, format = "latex", align = "lrrrrrrrrrrrrr",
+                label = "gsi-summary", , booktabs = TRUE,
+                linesep = c(rep("", 9), "\\addlinespace"),
+                caption = "Summary table of summed proportion of GSI assigment
+                by region and month.") %>%
+  # kable_styling(font_size = 6) %>%
+  kable_styling(latex_options = "hold_position")
+
+writeLines(gsi_kb, here("tables","gsi_summary.tex"))

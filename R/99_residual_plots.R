@@ -4,7 +4,7 @@ library(tidyverse)
 
 # loading sdmTMB model fits
 m_chinook <- readRDS(here::here("data", "fits", "fits_list_mdmesh.rds"))$chinook
-m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_sdmTMB_2024-12-13.rds"))
+m_svc <- readRDS(here::here("data", "fits", "chinook_gsi_prop_svc_int_sdmTMB.rds"))
 
 s_ch <- simulate(m_chinook, nsim = 200, type = "mle-mvn")
 dr_ch <- dharma_residuals(s_ch, m_chinook, return_DHARMa = TRUE)

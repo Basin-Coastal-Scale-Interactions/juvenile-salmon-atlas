@@ -4,6 +4,10 @@ library(tidyverse)
 library(readxl)
 library(janitor)
 library(here)
+library(knitr)
+library(kableExtra)
+options(knitr.kable.NA = '')
+
 
 # All tows
 tow_info <- read_csv(here("data-raw", "BCSI_TowInfo_20250121.csv")) %>%
@@ -40,6 +44,13 @@ dat <- readRDS(here::here("data", "chinook_dat_allcoast.rds"))
 gsidat <- readRDS(here::here("data", "chinook_gsi_counts_fitted.rds"))
 dat$year %>% range()
 gsidat$year %>% range()
+
+dat$date %>% range()
+gsidat$date %>% range()
+
+unique(dat$unique_event) %>% length
+unique(gsidat$unique_event) %>% length
+
 
 # old columns
 # t_info <- select(tow_info,
@@ -83,10 +94,6 @@ print(td, n = 48)
 tdw <- pivot_wider(td, names_from = net_desc, values_from = n) %>% print(n = 50)
 
 
-library(knitr)
-library(kableExtra)
-options(knitr.kable.NA = '')
-
 tow_kb <- kable(tdw, format = "latex", align = "llccccccc",
                   caption = "Yearly vessel and net type for all tows used in this 
                 study. Note that CanTrawl 400/580 and LFS 1142 are much larger nets than 
@@ -114,4 +121,21 @@ tow_data %>%
 #   mutate(date = lubridate::as_date(date)) %>% 
 #   select(date, everything()) %>%
 #   arrange(desc(date))
+
+### Size thresholds table
+
+size_th <- read_csv(here("data-raw", "size_thresholds_chinook.csv")) %>%
+  mutate(size_threshold = paste("\\textless", size_threshold))
+
+size_kb <- kable(list(size_th[1:6,], size_th[7:12,]), format = "latex", align = "lr",
+                 label = "size_th", escape = FALSE,  booktabs = TRUE,
+                 col.names = c("Month", "Length (mm FL)"),
+                caption = "Monthly size thresholds (fork length; mm) used to 
+                classify juvenile chinook. These thresholds include both 
+                subyearling and yearling fish.") %>%
+  #kable_styling(font_size = 6) %>%
+  kable_styling(latex_options = "hold_position")
+
+writeLines(size_kb, here("tables","size_thresholds.tex"))
+
 
