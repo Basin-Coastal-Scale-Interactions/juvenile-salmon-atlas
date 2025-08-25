@@ -5,6 +5,7 @@ library(cowplot)
 library(sf)
 library(knitr)
 library(kableExtra)
+library(here)
 options(knitr.kable.NA = '')
 
 
@@ -18,6 +19,7 @@ m_svc <- readRDS(here("data", "fits", "chinook_gsi_prop_svc_sdmTMB.rds"))
 m_svc$version
 gsidat <- m_svc$data
 table(gsidat$region)
+table(gsidat$month_f)
 
 
 min_lat <- min(floor(c(chinook_dat$lat, gsi_dat$lat)) - 0.25)
@@ -102,8 +104,8 @@ p2 <- cowplot::ggdraw(set_map2) +
                      width = 0.4, height = 0.35)
 
 ggsave(file = here::here("figs","set_maps.png"), 
-       plot = plot_grid(set_map, p2,  vjust = 7, hjust = -1.6,
-                        labels = c('a) Species-wide model', 'b) Stock-specific model')), 
+       plot = plot_grid(set_map, p2,  vjust = 6, hjust =  c(-1.8, -1.2),
+                        labels = c('a) Abundance model', 'b) Stock composition model')), 
        width = 12, height = 7.8, units = "in")
 
 # dev.off()
@@ -134,12 +136,12 @@ bubble_temp_coverage <- chinook_dat %>%
 bubble_combined <- bind_rows(chinook_dat %>% 
             group_by(year, week) %>% 
             summarize(n_tows = length(unique(unique_event)), .groups = "drop") %>%
-            mutate(model = "Species-wide model"),
+            mutate(model = "Abundance model"),
             
           gsi_dat %>% 
             group_by(year, week) %>% 
             summarize(n_tows = length(unique(unique_event)), .groups = "drop") %>%
-            mutate(model = "Stock-specifc model")) %>%
+            mutate(model = "Stock composition model")) %>%
   ungroup() %>% 
   ggplot(.) +
   geom_jitter(aes(y = week, x = year, size = n_tows), 
@@ -158,7 +160,7 @@ bubble_combined <- bind_rows(chinook_dat %>%
 
 ggsave(file = here::here("figs","temp_cov.png"), 
        plot = bubble_combined, 
-       width = 7, height = 7, units = "in")
+       width = 5, height = 5, units = "in")
 
 ### Figures of spatial tow coverage by month
 
@@ -238,15 +240,15 @@ gsi_tb <- gsidat %>%
   ungroup() %>%
   group_by(region) %>%
   mutate(Total = sum(Feb+Mar+Jun+Jul+Aug+Sep+Oct+Nov+Dec)) %>% 
-  mutate(Jan = 0, Apr = 0, May = 0) %>%
+  mutate(Jan = 0, Apr = 0) %>%
   select(Region = region, month(1:12, abbr = TRUE, label = TRUE), Total) %>%
   janitor::adorn_totals("row") %>% 
   mutate_if(is.numeric, ~round(., 1))
 
 gsi_kb <- kable(gsi_tb, format = "latex", align = "lrrrrrrrrrrrrr",
                 label = "gsi-summary", , booktabs = TRUE,
-                linesep = c(rep("", 9), "\\addlinespace"),
-                caption = "Summary table of summed proportion of GSI assigment
+                linesep = c(rep("", 10), "\\addlinespace"),
+                caption = "Summary table of summed proportion of GSI assigmment
                 by region and month.") %>%
   # kable_styling(font_size = 6) %>%
   kable_styling(latex_options = "hold_position")
