@@ -10,6 +10,7 @@ R/mwes/*
 R/old/*
 R/blas-test.R
 R/99_sdmTMB_bug_testing.R
+R/99_model_structure_testing.R
 R/dist_to_coast_from_raster.R
 data-raw/spatial/wcvi_ipes_shapefiles/*
 data-raw/spatial/distance-coast2024/*

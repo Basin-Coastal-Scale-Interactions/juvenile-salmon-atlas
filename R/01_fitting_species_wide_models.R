@@ -137,7 +137,7 @@ inla_mesh_raw <- fmesher::fm_mesh_2d_inla(
 )  
 plot(inla_mesh_raw)
 
-# Cam's original mesh
+# CF's original mesh
 spde <- make_mesh(
   dat %>% 
     filter(species == "chinook"),

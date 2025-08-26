@@ -90,10 +90,9 @@ gsi_all_stock_in$unique_fish %>% unique %>% length
 event_key <- read_xlsx(here("data-raw", "CHINOOK_fish_all_gsi_20250122.xlsx"), sheet = "fish_catch_event") %>%
   janitor::clean_names()
 
-# Key for stock to Cam's regions
+# Key for regional groupings
 
-#stock_key <- read_csv("data-raw/seb_key_fraser_fall_2025-04-08.csv") 
-stock_key <- read_csv("data-raw/seb_key_2025-04-25.csv") 
+stock_key <- read_csv(here("data-raw","chinook_stock_key_2025-04-25.csv"))
 table(stock_key$juv_marine)
 
 filter(stock_key, is.na(juv_marine))

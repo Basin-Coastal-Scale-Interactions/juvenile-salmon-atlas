@@ -83,7 +83,7 @@ get_utm <- function(x, y, zone, loc){
 ## Nov 20 2024 update
 ## This data set does not have missing species in tows with zero salmon
 ## so no need to wrangle as below
-dat_in <- read.csv(here::here("data-raw", "Seb_SalmonCounts_all_20250121.csv"),
+dat_in <- read.csv(here::here("data-raw", "SalmonCounts_all_20250121.csv"),
                     stringsAsFactors = FALSE) %>% 
   janitor::clean_names() %>% 
   mutate(

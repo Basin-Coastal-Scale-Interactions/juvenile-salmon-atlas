@@ -83,7 +83,7 @@ filter(gsitow_data, grepl("Neocaligus", vessel)) %>%
   pull(year) |> table()
 
 # Fixing net values here
-# jackie.king 7 November, 1:06 pm
+# JK 7 November, 1:06 pm
 # "The Ocean Selector is a groundfish boat, so we would not have used a bottom 
 # trawl net.  I would expect the CanTrawl 250 to have been loaded."
 # 

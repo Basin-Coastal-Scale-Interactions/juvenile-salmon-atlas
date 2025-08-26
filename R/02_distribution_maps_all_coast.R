@@ -117,7 +117,7 @@ saveRDS(dat_tbl_dmesh, here::here("data", "fits", "all_dmesh_allcoast_withpred.r
 
 dat_tbl_dmesh <- readRDS(here::here("data", "fits", "all_dmesh_allcoast_withpred.rds"))
 
-# png(here::here("figs", "seb", "chinook_juv_months_wdata4.png"),
+# png(here::here("figs", "chinook_juv_months_wdata4.png"),
 #     height = 7, width = 10, units = "in", res = 300)
 # plot_map(pred_months, exp(est), show_raw_data = TRUE, chinook_dat) + 
 #   ggtitle("Predicted distribution of juvenile chinook by month") +
