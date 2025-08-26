@@ -13,7 +13,7 @@ library(fmesher)
 
 # Loading chinook data and sourcing coast files for plotting
 source("R/plot_map.R")
-chinook_dat <- readRDS(here::here("data", "cleaned_atlas_dat_20241210.rds")) %>%
+chinook_dat <- readRDS(here::here("data", "cleaned_atlas_catch_dat.rds")) %>%
   filter(species == "chinook")
 
 # loading whole grid

@@ -176,4 +176,4 @@ pred_cmb <- left_join(pred_stock_sub, pred_sp_sub,
   arrange(region, month, utm_x_1000, utm_y_1000) %>%
   mutate(pred_cmb = pred * prob_i)
 
-saveRDS(pred_cmb, file = here("data", "pred_cmb_11groups.rds"))
+saveRDS(pred_cmb, file = here("data", "pred_cmb.rds"))

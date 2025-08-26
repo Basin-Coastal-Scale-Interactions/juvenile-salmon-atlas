@@ -5,6 +5,7 @@
 00_db_query.R
 figs/*
 data/fits/*
+data/cvs/*
 R/mwes/*
 R/old/*
 R/blas-test.R
@@ -35,4 +36,5 @@ data/gsi-prop-mesh.rds
 data/pred_chinook_cutoff.rds
 data/pred_grid_all_coast.rds
 data/pred_cmb.rds
+data/pred_cmb_old_withcutoffs.rds
 ToDo.md

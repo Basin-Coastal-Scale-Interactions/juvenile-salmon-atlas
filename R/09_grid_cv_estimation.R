@@ -10,6 +10,8 @@ library(here)
 library(patchwork)
 library(sf)
 
+cutoff <- 5
+
 source("R/cleave_by.R")
 source("R/99_rotation_functions.R")
 
@@ -50,7 +52,7 @@ for (i in seq_len(dim(coast_proj4)[1])) {
 
 rotated_coast <- do.call(rbind, rotated_coast)
 
-saveRDS(rotated_coast, here::here("data", "rotated_coast_outline.rds"))
+#saveRDS(rotated_coast, here::here("data", "rotated_coast_outline.rds"))
 
 # functions for quickly applying and unapplying scale()
 scale_est <- function (x, unscaled_vec) {
@@ -123,19 +125,19 @@ cvall_chinook_rot <- bind_cols(cvall_chinook,
 
 cvall_chinook_rot$cvs %>% range()
 # CV cutoff value to remove grid points with cvs higher than cutoff
-cutoff <- 5
+
 
 
 pred_chinook_cutoff <- cvall_chinook_rot %>%
   mutate(cutoff_keep = if_else(cvs < cutoff, TRUE, FALSE))
 
 # saving cutoffs to join with normalized predictions
-saveRDS(pred_chinook_cutoff, here("data", "pred_chinook_cutoff.rds"))
-#pred_chinook_cutoff <- readRDS(here("data", "pred_chinook_cutoff.rds"))
+saveRDS(pred_chinook_cutoff, here("data", "cvs", "pred_chinook_cutoff.rds"))
+#pred_chinook_cutoff <- readRDS(here("data", "cvs", "pred_chinook_cutoff.rds"))
 
 # saving cvs data frame for faster replotting
-saveRDS(cvall_chinook_rot, here("data", "cvs_chinook.rds"))
-#cvall_chinook_rot <- readRDS(here("data", "cvs_chinook.rds"))
+saveRDS(cvall_chinook_rot, here("data", "cvs", "cvs_chinook.rds"))
+#cvall_chinook_rot <- readRDS(here("data", "cvs", "cvs_chinook.rds"))
 
 
 cvhists <- cvall_chinook_rot %>%
@@ -191,8 +193,9 @@ cvplot_chinook_rot <- ggplot(data = chinook_ggdata) +
 
 cvplot_chinook_rot
 
+ggsave(cvplot_chinook_rot, filename = here("figs", "cv_month_species.png"), 
+       width = 5, height = 6)
 
-ggsave(cvplot_chinook_rot, filename = here("figs", "cv_month_species.png"), width = 5, height = 6)
 
 pred_plot_chinook_rot <- ggplot(data = chinook_ggdata) +
   geom_tile(aes(x = Xr, y = Yr, fill = pred), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
@@ -238,10 +241,11 @@ grid_months <- prop_grid %>%
 glimpse(grid_months)
 table(grid_months$month_f)
 table(grid_months$month)
+table(grid_months$region)
 
 #cleave_by allows to chop by more than one variable
 grid_month_region <- grid_months %>% cleave_by(region, month_adj)
-
+length(grid_month_region)
 gc()
 
 # predicting on grid chunks for each region and month
@@ -271,8 +275,8 @@ cv_list <- map(grid_month_region, function (newdata) {
   tibble(pred = pred_i, means = means %>% m_svc$family$linkinv(), sds = sds, cvs = cvs)
 })
 
-saveRDS(cv_list, here("data", "fits", "cv_stock_grid_list.rds"))
-#cv_list <- readRDS(here("data", "fits", "cv_stock_grid_list.rds"))
+saveRDS(cv_list, here("data", "cvs", "cv_stock_grid_list.rds"))
+#cv_list <- readRDS(here("data", "cvs", "cv_stock_grid_list.rds"))
 
 all_list <- map2(grid_month_region, cv_list, function (grid, cvs) {
   bind_cols(grid, cvs)
@@ -281,7 +285,7 @@ all_list <- map2(grid_month_region, cv_list, function (grid, cvs) {
 cvall <- bind_rows(all_list)
 
 cvall_stock_rot <- bind_cols(cvall, 
-                          gfplot:::rotate_coords(cvall$utm_x_1000, cvall$utm_y_1000, 45, 
+                          rotate_coords(cvall$utm_x_1000, cvall$utm_y_1000, 45, 
                                                  rotation_centre)) %>%
                                                  # c(sum(range(cvall$utm_x_1000))/2, 
                                                  #   sum(range(cvall$utm_y_1000))/2))) %>%
@@ -303,21 +307,27 @@ cv_stock_hists <- cvall_stock_rot %>%
   NULL
 
 ggsave(cv_stock_hists, filename = here::here("figs", "stock_cvs_hists.png"), 
-       width = 12, height = 12)
-
-stock_ggdata <- cvall_stock_rot %>%
-  dplyr::select(Xr, Yr, stock_cvs = cvs, pred, salmon_region = region, month_f) %>%
-  #filter(cvs < cutoff)
-  mutate(stock_cvs2 = if_else(stock_cvs <= cutoff, stock_cvs, NA)) 
+       width = 12, height = 14)
 
 pred_stock_cutoff <- cvall_stock_rot %>%
   mutate(cutoff_keep = if_else(cvs < cutoff, TRUE, FALSE))
 
 # saving cutoffs to join with normalized predictions
-saveRDS(pred_stock_cutoff, here("data", "pred_stock_cutoff.rds"))
+saveRDS(pred_stock_cutoff, here("data", "cvs","pred_stock_cutoff.rds"))
+
+pred_stock_cutoff <- readRDS(here("data", "cvs","pred_stock_cutoff.rds"))
+rotated_coast <- readRDS(here("data", "rotated_coast_outline.rds"))
+
+stock_ggdata <- pred_stock_cutoff %>%
+  dplyr::select(Xr, Yr, stock_cvs = cvs, pred, salmon_region = region, month_f,cutoff_keep) %>%
+  #filter(cvs < cutoff)
+  mutate(stock_cvs2 = if_else(cutoff_keep, stock_cvs, NA)) %>%
+  select(-cutoff_keep)
+
+
 
 cvplot_stock_rot_1 <- stock_ggdata %>%
-  filter(salmon_region %in% c("NBC/SEAK", "Central BC", "Salish Coastal", "WA/OR Coastal", "WCVI")) %>%
+  filter(salmon_region %in% c("NBC/SEAK", "Central BC", "Salish Sea", "WA/OR Coastal", "WCVI")) %>%
   ggplot(data = .) +
   #geom_point(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb), shape = 15) + # this hack works but is slower to render 
   geom_tile(aes(x = Xr, y = Yr, fill = stock_cvs2), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
@@ -337,14 +347,14 @@ cvplot_stock_rot_1 <- stock_ggdata %>%
         axis.text.y=element_blank()) +
   geom_sf(data = rotated_coast, color = NA, fill = "gray90") +
   #annotate("text", x = 616000, y = 5290000, color = "red", size = 11, label = "?") +
-  scale_x_continuous(name = NULL, limits = range(cvall_stock_rot$Xr)+c(-1000,1000), expand = c(0, 0)) +
-  scale_y_continuous(name = NULL, limits = range(cvall_stock_rot$Yr)+c(-1000,1000), expand = c(0, 0)) +
+  scale_x_continuous(name = NULL, limits = range(stock_ggdata$Xr)+c(-1000,1000), expand = c(0, 0)) +
+  scale_y_continuous(name = NULL, limits = range(stock_ggdata$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
   #ggtitle("Juvenile chinoook stock distribution") +
   NULL
 
 cvplot_stock_rot_2 <- stock_ggdata %>%
-  filter(!salmon_region %in% c("NBC/SEAK", "Central BC", "Salish Coastal", "WA/OR Coastal", "WCVI")) %>%
+  filter(!salmon_region %in% c("NBC/SEAK", "Central BC", "Salish Sea", "WA/OR Coastal", "WCVI")) %>%
   ggplot(data = .) +
   #geom_point(aes(x = xr_1000, y = yr_1000, fill = pred_cmb, color = pred_cmb), shape = 15) + # this hack works but is slower to render 
   geom_tile(aes(x = Xr, y = Yr, fill = stock_cvs2), height = 1000, width = 1500) + # this height/width combo fixes plotting issues
@@ -364,16 +374,30 @@ cvplot_stock_rot_2 <- stock_ggdata %>%
         axis.text.y=element_blank()) +
   geom_sf(data = rotated_coast, color = NA, fill = "gray90") +
   #annotate("text", x = 616000, y = 5290000, color = "red", size = 11, label = "?") +
-  scale_x_continuous(name = NULL, limits = range(cvall_stock_rot$Xr)+c(-1000,1000), expand = c(0, 0)) +
-  scale_y_continuous(name = NULL, limits = range(cvall_stock_rot$Yr)+c(-1000,1000), expand = c(0, 0)) +
+  scale_x_continuous(name = NULL, limits = range(stock_ggdata$Xr)+c(-1000,1000), expand = c(0, 0)) +
+  scale_y_continuous(name = NULL, limits = range(stock_ggdata$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
   #ggtitle("Juvenile chinoook stock distribution") +
   NULL
 
-ggsave(cvplot_stock_rot_1 + cvplot_stock_rot_2 +
+# rm(all_list)
+
+
+layout <- "
+AB
+AB
+AB
+AB
+AB
+#B
+"
+
+
+ggsave(cvplot_stock_rot_1 + cvplot_stock_rot_2 + plot_layout(design = layout) +
          plot_annotation(title = 'Stock-specific model',
                          theme = theme(plot.title = element_text(size = 18))),
        filename = here::here("figs", "cv_stock_region_month.png"), 
        width = 11, height = 11)
 
 
+gc()
