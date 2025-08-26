@@ -1,4 +1,4 @@
-"Stock-specific marine distribution patterns of juvenile Chinook salmon reveal a gradient of migratory strategies during their first year at sea".
+"Stock-specific marine distribution patterns of juvenile Chinook salmon reveal a gradient of migratory strategies during their first year at sea"
 ====
 
 This repository contains all required data and code to replicate the analyses
