@@ -147,7 +147,7 @@ cvhists <- cvall_chinook_rot %>%
   facet_wrap(~month_f)  +
   ylab("Count of grid units") +
   xlab("Coefficient of variation") +
-  ggtitle("Species-wide model") +
+  ggtitle("Abundance model") +
   theme_bw() +
   geom_vline(xintercept = 5, color = "red") +
   NULL
@@ -301,7 +301,7 @@ cv_stock_hists <- cvall_stock_rot %>%
   facet_grid(salmon_region ~ month_f)  +
   ylab("Count of grid units") +
   xlab("Coefficient of variation") +
-  ggtitle("Stock-specific model") +
+  ggtitle("Stock composition model") +
   theme_bw() +
   geom_vline(xintercept = 5, color = "red") +
   NULL
@@ -394,7 +394,7 @@ AB
 
 
 ggsave(cvplot_stock_rot_1 + cvplot_stock_rot_2 + plot_layout(design = layout) +
-         plot_annotation(title = 'Stock-specific model',
+         plot_annotation(title = 'Stock composition model',
                          theme = theme(plot.title = element_text(size = 18))),
        filename = here::here("figs", "cv_stock_region_month.png"), 
        width = 11, height = 11)

@@ -54,7 +54,7 @@ pabs_residents <- grid_df %>%
   scale_x_continuous(name = NULL, limits = range(grid_df$Xr)+c(-1000,1000), expand = c(0, 0)) +
   scale_y_continuous(name = NULL, limits = range(grid_df$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
-  ggtitle("Distribution of juvenile chinook - \"Nearshore resident\" stock groupings") +
+  ggtitle("Distribution of juvenile chinook - \"Resident\" stock groupings") +
   NULL
 
 ggsave(pabs_residents,
@@ -88,7 +88,7 @@ pabs_slowmigs <- grid_slowmigs %>%
   scale_x_continuous(name = NULL, limits = range(grid_df$Xr)+c(-1000,1000), expand = c(0, 0)) +
   scale_y_continuous(name = NULL, limits = range(grid_df$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
-  ggtitle("Distribution of juvenile chinook - \"Protracted disperser\" stock groupings") +
+  ggtitle("Distribution of juvenile chinook - Salish Sea \"migrating\" stock groupings") +
   NULL
 
 ggsave(pabs_slowmigs,
@@ -122,7 +122,7 @@ pabs_fastmigs <- grid_fastmigs %>%
   scale_x_continuous(name = NULL, limits = range(grid_df$Xr)+c(-1000,1000), expand = c(0, 0)) +
   scale_y_continuous(name = NULL, limits = range(grid_df$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
-  ggtitle("Distribution of juvenile chinook - \"Rapid disperser\" stock groupings") +
+  ggtitle("Distribution of juvenile chinook - Pacific Ocean \"migrating\" stock groupings") +
   NULL
 
 ggsave(pabs_fastmigs,
@@ -257,7 +257,7 @@ prel_slowmigs <- grid_rel %>%
   scale_x_continuous(name = NULL, limits = range(grid_df$Xr)+c(-1000,1000), expand = c(0, 0)) +
   scale_y_continuous(name = NULL, limits = range(grid_df$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
-  ggtitle("Relative distribution of juvenile chinook - \"Slow migration\" stock groupings") +
+  ggtitle("Relative distribution of juvenile chinook - Salish Sea \"migrating\" stock groupings") +
   NULL
 #prel_1
 
@@ -289,7 +289,7 @@ prel_fastmigs <- grid_rel %>%
   scale_x_continuous(name = NULL, limits = range(grid_df$Xr)+c(-1000,1000), expand = c(0, 0)) +
   scale_y_continuous(name = NULL, limits = range(grid_df$Yr)+c(-1000,1000), expand = c(0, 0)) +
   facet_grid(salmon_region ~ month_f)  +
-  ggtitle("Relative distribution of juvenile chinook - \"Fast migration\" stock groupings") +
+  ggtitle("Relative distribution of juvenile chinook - Pacific Ocean \"migrating\" stock groupings") +
   NULL
 #prel_1
 
