@@ -34,11 +34,13 @@ png(here::here("figs", "mesh-comp.png"), width = 9, height = 4, units = "in", re
 par(mfrow =c(1,2))
 par(mar = c(0,0,1,0))
 
-plot(sf::st_geometry(all_coast_mesh), col = "#DDDDDD80", lwd = 1, asp = 1, border = "#BBBBBB", main = "A) Species-wide model")
+plot(sf::st_geometry(all_coast_mesh), col = "#DDDDDD80", lwd = 1, asp = 1, border = "#BBBBBB", 
+     main = "A) Abundance model")
 plot(mdmesh$spde$mesh, edge.color = "blue", col = NA, lwd = 1,add = TRUE)
 mtext(paste0(mdmesh$spde$mesh$n, " knots"), line =-2, adj = 0.6)
 
-plot(sf::st_geometry(all_coast_mesh), col = "#DDDDDD80", lwd = 1, asp = 1, border = "#BBBBBB", main = "B) Stock-specific model")
+plot(sf::st_geometry(all_coast_mesh), col = "#DDDDDD80", lwd = 1, asp = 1, border = "#BBBBBB", 
+     main = "B) Stock composition model")
 plot(gsimesh$mesh, edge.color = "blue", col = NA, lwd = 1,add = TRUE)
 mtext(paste0(gsimesh$mesh$n, " knots"), line =-2, adj = 0.6)
 
